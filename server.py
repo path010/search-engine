@@ -57,6 +57,28 @@ class SearchResult:
 
 TOPIC_PROFILES: list[dict[str, Any]] = [
     {
+        "keywords": ("人", "人类", "智人", "human", "humanity"),
+        "original_curated": True,
+        "original_bridge": "人类概念",
+        "direct": [
+            ("智人 人类演化 起源", "人类概念", "从物种演化与人类起源解释“人”。"),
+            ("人体 解剖 生理 系统", "人类概念", "从身体结构和生命系统解释“人”。"),
+            ("意识 认知 自我 人", "人类概念", "从意识、认知与自我经验解释“人”。"),
+            ("人类学 语言 文化 社会", "人类概念", "从语言、文化和社会关系解释“人”。"),
+        ],
+        "adjacent": [
+            ("智人 演化 人类起源", "人类演化", "把个体的人放入漫长的物种演化历史。"),
+            ("文化人类学 亲属 社会", "文化人类学", "人不仅是生物个体，也生活在文化和关系网络中。"),
+            ("意识 自我 心灵哲学", "意识与自我", "从主观体验和自我意识追问何以成为人。"),
+        ],
+        "cross": [
+            ("尼安德特人 考古 基因", "古人类", "通过其他古人类重新认识现代人的独特与共同之处。"),
+            ("动物文化 黑猩猩 工具", "动物文化", "比较其他动物的学习和工具行为，检验人的边界。"),
+            ("人工智能 人格 道德地位", "人格边界", "用人工智能与人格问题反向审视“人”的定义。"),
+            ("人口迁徙 语言地图", "人类迁徙", "从基因、语言和地理分布观察人类如何抵达世界各地。"),
+        ],
+    },
+    {
         "keywords": ("电", "电力", "电气", "电能", "电流", "electric", "electricity"),
         "adjacent": [
             ("电的产生 电场 电流 电磁学", "电磁现象", "从日常用电回到电荷、电场和电流的物理基础。"),
@@ -133,6 +155,38 @@ GENERIC_PROFILE = {
 
 
 CURATED_LIBRARY: dict[str, list[dict[str, str]]] = {
+    "人类概念": [
+        {"title": "人：作为物种、个体与文化主体", "url": "https://zh.wikipedia.org/wiki/%E4%BA%BA", "snippet": "从生物分类、社会关系、语言与文化等角度梳理“人”的基本含义。"},
+        {"title": "智人：现代人类所属的物种", "url": "https://zh.wikipedia.org/wiki/%E6%99%BA%E4%BA%BA", "snippet": "了解智人的形态、演化、迁徙和与其他古人类的关系。"},
+        {"title": "Smithsonian Human Origins：什么使我们成为人", "url": "https://humanorigins.si.edu/", "snippet": "以化石、遗传、工具和行为证据探索数百万年人类演化史。"},
+        {"title": "Human Evolution Timeline：人类演化时间线", "url": "https://humanorigins.si.edu/evidence/human-evolution-interactive-timeline", "snippet": "交互查看不同古人类、气候变化与重要行为证据出现的时间。"},
+        {"title": "Natural History Museum：人类演化", "url": "https://www.nhm.ac.uk/discover/human-evolution.html", "snippet": "从化石和基因证据了解现代人如何形成并走向全球。"},
+        {"title": "The Leakey Foundation：人类起源研究", "url": "https://leakeyfoundation.org/", "snippet": "聚合古人类学、灵长类学与人类演化的一线研究和科普。"},
+        {"title": "Max Planck Institute：演化人类学", "url": "https://www.eva.mpg.de/", "snippet": "研究人类基因、语言、文化、行为和灵长类近亲。"},
+        {"title": "NHGRI：人类基因组计划", "url": "https://www.genome.gov/human-genome-project", "snippet": "了解人类基因组测序如何改变医学、生物学和对人类共同性的认识。"},
+        {"title": "OpenStax Anatomy & Physiology：人体解剖与生理", "url": "https://openstax.org/details/books/anatomy-and-physiology-2e", "snippet": "免费的系统教材，覆盖细胞、组织、器官与人体各大系统。"},
+        {"title": "Visible Human Project：数字人体资料", "url": "https://www.nlm.nih.gov/research/visible/visible_human.html", "snippet": "美国国家医学图书馆建立的高分辨率数字人体解剖数据。"},
+        {"title": "Innerbody：交互式人体系统", "url": "https://www.innerbody.com/htm/body.html", "snippet": "通过交互模型认识骨骼、肌肉、神经、循环和其他人体系统。"},
+        {"title": "Khan Academy：人体生物学", "url": "https://www.khanacademy.org/science/biology/human-biology", "snippet": "用课程和图解学习人体循环、呼吸、神经、免疫等生命过程。"},
+        {"title": "Stanford Encyclopedia：人的本性", "url": "https://plato.stanford.edu/entries/human-nature/", "snippet": "从哲学、生物学和社会科学讨论是否存在共同的“人的本性”。"},
+        {"title": "Stanford Encyclopedia：意识", "url": "https://plato.stanford.edu/entries/consciousness/", "snippet": "梳理意识、主观体验及其与大脑和身体关系的主要理论。"},
+        {"title": "Stanford Encyclopedia：人格同一性", "url": "https://plato.stanford.edu/entries/identity-personal/", "snippet": "探讨一个人跨越时间仍是同一个人的条件。"},
+        {"title": "Internet Encyclopedia of Philosophy：心灵哲学", "url": "https://iep.utm.edu/category/m-and-e/philosophy-of-mind/", "snippet": "介绍心身关系、意识、自我、知觉与人工心智等问题。"},
+        {"title": "SAPIENS：面向公众的人类学杂志", "url": "https://www.sapiens.org/", "snippet": "以考古、文化、生物和语言人类学理解人类经验的多样性。"},
+        {"title": "Perspectives：开放文化人类学教材", "url": "https://perspectives.americananthro.org/", "snippet": "从亲属、语言、宗教、经济、政治和全球化理解不同社会中的人。"},
+        {"title": "WALS：世界语言结构地图集", "url": "https://wals.info/", "snippet": "用地图和数据库比较全球语言的语音、语法与结构特征。"},
+        {"title": "Ethnologue：世界语言资料", "url": "https://www.ethnologue.com/", "snippet": "观察人类语言的分布、使用人口、活力与谱系关系。"},
+        {"title": "Our World in Data：人口与人口结构", "url": "https://ourworldindata.org/population-growth", "snippet": "用长期数据理解世界人口增长、年龄结构和地区差异。"},
+        {"title": "United Nations：世界人口展望", "url": "https://www.un.org/development/desa/pd/content/world-population-prospects-2024", "snippet": "联合国关于全球人口规模、出生、死亡和迁徙的权威估计。"},
+        {"title": "Human Development Reports：人的发展", "url": "https://hdr.undp.org/", "snippet": "从健康、教育、收入与能力角度衡量人的发展，而不只看经济增长。"},
+        {"title": "UNESCO：文化多样性", "url": "https://www.unesco.org/en/cultural-diversity", "snippet": "理解文化表达、身份、交流与人类共同遗产之间的关系。"},
+        {"title": "National Geographic：全球人类迁徙", "url": "https://education.nationalgeographic.org/resource/global-human-journey/", "snippet": "从考古和遗传证据观察现代人走出非洲并遍布全球的过程。"},
+        {"title": "Human Protein Atlas：人体蛋白质图谱", "url": "https://www.proteinatlas.org/humanproteome", "snippet": "以开放数据观察蛋白质在人体组织、细胞和器官中的分布。"},
+        {"title": "Allen Human Brain Atlas：人脑图谱", "url": "https://human.brain-map.org/", "snippet": "把人脑的解剖结构、基因表达与神经科学数据放到同一个交互图谱中。"},
+        {"title": "WHO：人的健康与生命历程", "url": "https://www.who.int/health-topics", "snippet": "从生命历程、疾病、环境和公共卫生理解影响人类健康的因素。"},
+        {"title": "World Values Survey：人类价值观调查", "url": "https://www.worldvaluessurvey.org/", "snippet": "通过跨国长期调查比较人的价值观、信任、家庭、宗教与社会态度。"},
+        {"title": "Harvard Human Flourishing Program：人的幸福与发展", "url": "https://hfh.fas.harvard.edu/", "snippet": "跨学科研究健康、幸福、意义、品格和社会关系如何共同构成人的繁荣。"},
+    ],
     "原始问题": [
         {"title": "MDN Web Docs：Web 开发技术文档", "url": "https://developer.mozilla.org/zh-CN/", "snippet": "面向 Web 开发者的开放技术文档，包含性能、JavaScript、CSS、网络与浏览器 API。"},
         {"title": "web.dev：构建快速、易用的现代网站", "url": "https://web.dev/", "snippet": "提供 Web 性能、可访问性、用户体验和工程实践指南。"},
@@ -289,10 +343,12 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
 
     adjacent = rotate(list(profile["adjacent"]))
     cross = rotate(list(profile["cross"]))
-    plans = [SearchPlan("原主题", query, "原始问题", "保留与输入直接相关的高质量结果，避免搜索完全失焦。", 0)]
+    direct = rotate(list(profile.get("direct", [])))
+    original_bridge = profile.get("original_bridge", "原始问题")
+    plans = [SearchPlan("原主题", query, original_bridge, "保留与输入直接相关的高质量结果，避免搜索完全失焦。", 0)]
 
     if divergence <= 10:
-        mix = []
+        mix = [(item, min(divergence, 2 + index * 2)) for index, item in enumerate(direct)]
     elif divergence <= 25:
         mix = [(adjacent[0], 24), (adjacent[1], 32)]
     elif divergence <= 55:
@@ -303,7 +359,8 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
         mix = [(cross[0], 72), (cross[1], 82), (cross[2], 90), (cross[3 % len(cross)], 96)]
 
     for (search_query, bridge, reason), distance in mix:
-        plans.append(SearchPlan("跨域方向", search_query, bridge, reason, distance))
+        label = "主题分面" if distance <= 10 else "跨域方向"
+        plans.append(SearchPlan(label, search_query, bridge, reason, distance))
     return plans
 
 
@@ -423,18 +480,18 @@ def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool
     # Round-robin by plan so the requested divergence controls both the
     # explanation and the returned websites, even when live search is offline.
     plans = [plan for plan in plans if include_original or plan.bridge != "原始问题"]
-    cursors = [0 for _ in plans]
+    cursors: dict[str, int] = {}
     target_count = page * limit
     generated: list[SearchResult] = []
     while len(generated) < target_count:
         added = False
-        for plan_index, plan in enumerate(plans):
+        for plan in plans:
             candidates = CURATED_LIBRARY.get(plan.bridge, [])
-            cursor = cursors[plan_index]
+            cursor = cursors.get(plan.bridge, 0)
             if cursor >= len(candidates):
                 continue
             item = candidates[cursor]
-            cursors[plan_index] += 1
+            cursors[plan.bridge] = cursor + 1
             source, display_url = host_label(item["url"])
             generated.append(SearchResult(item["title"], item["url"], item["snippet"], source, display_url, plan.bridge, plan.reason, plan.distance))
             added = True

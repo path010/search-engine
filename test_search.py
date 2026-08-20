@@ -39,6 +39,22 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(plans[0].query, "代码优化")
         self.assertEqual(plans[0].distance, 0)
 
+    def test_broad_human_query_uses_direct_facets_at_low_divergence(self):
+        plans = build_search_plans("人", 2)
+        self.assertEqual(len(plans), 5)
+        self.assertTrue(all(plan.distance <= 2 for plan in plans))
+        self.assertTrue(all(plan.bridge == "人类概念" for plan in plans))
+
+    def test_broad_human_query_can_fill_three_stable_pages(self):
+        with patch("server.searxng_search", return_value=[]):
+            pages = [search("人", 2, 10, page=number) for number in (1, 2, 3)]
+        self.assertEqual(pages[0]["pagination"]["total_results"], 30)
+        self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
+        self.assertEqual([len(payload["results"]) for payload in pages], [10, 10, 10])
+        url_sets = [{result["url"] for result in payload["results"]} for payload in pages]
+        self.assertFalse(url_sets[0] & url_sets[1])
+        self.assertFalse(url_sets[1] & url_sets[2])
+
     def test_high_divergence_uses_cross_domain_queries(self):
         plans = build_search_plans("代码优化", 90)
         self.assertGreaterEqual(min(plan.distance for plan in plans[1:]), 72)
