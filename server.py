@@ -27,8 +27,9 @@ SEARXNG_URL = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL).strip().rstrip("/")
 SEARXNG_LANGUAGE = os.getenv("SEARXNG_LANGUAGE", "zh-CN").strip() or "zh-CN"
 SEARXNG_ENGINES = os.getenv("SEARXNG_ENGINES", "baidu,google").strip() or "baidu,google"
 SEARXNG_FALLBACK_ENGINES = os.getenv("SEARXNG_FALLBACK_ENGINES", "bing").strip() or "bing"
-SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "3.0"))
-SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "3.5"))
+SEARXNG_CONCEPT_ENGINES = os.getenv("SEARXNG_CONCEPT_ENGINES", "yandex,zapmeta,quark").strip() or "yandex,zapmeta,quark"
+SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "6.0"))
+SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "6.5"))
 SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "120"))
 MAX_RESULT_PAGES = 3
 SEARCH_CACHE: dict[tuple[str, int, int], tuple[float, dict[str, Any]]] = {}
@@ -41,6 +42,9 @@ class SearchPlan:
     bridge: str
     reason: str
     distance: int
+    # The user's untouched input. Low-divergence results must visibly contain
+    # this anchor, which prevents an engine mistranslation from changing topic.
+    anchor: str = ""
 
 
 @dataclass
@@ -152,6 +156,16 @@ GENERIC_PROFILE = {
         ("{q} 基础设施 社会系统", "系统联系", "观察这个概念如何嵌入基础设施和更大的社会系统。"),
     ],
 }
+
+
+GENERIC_DIRECT_FACETS = [
+    ("{q}", "原始主题", "直接检索输入内容。"),
+    ("{q} 是什么", "概念解释", "补充定义和入门解释。"),
+    ("{q} 分类 类型", "分类体系", "从分类与类型扩展同一主题。"),
+    ("{q} 原理 结构", "原理结构", "寻找主题背后的原理与结构。"),
+    ("{q} 历史 演化", "历史演化", "沿着形成和演变过程理解主题。"),
+    ("{q} 应用 影响", "应用影响", "查看主题的实际应用与影响。"),
+]
 
 
 CURATED_LIBRARY: dict[str, list[dict[str, str]]] = {
@@ -343,34 +357,68 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
 
     adjacent = rotate(list(profile["adjacent"]))
     cross = rotate(list(profile["cross"]))
-    direct = rotate(list(profile.get("direct", [])))
+    # Direct facets are universal rather than maintained keyword-by-keyword.
+    # They give broad, short and previously unseen queries enough recall while
+    # staying anchored to exactly what the user entered.
+    direct = [
+        (facet_query.format(q=query), bridge, reason)
+        for facet_query, bridge, reason in GENERIC_DIRECT_FACETS
+    ]
     original_bridge = profile.get("original_bridge", "原始问题")
-    plans = [SearchPlan("原主题", query, original_bridge, "保留与输入直接相关的高质量结果，避免搜索完全失焦。", 0)]
+    plans: list[SearchPlan] = []
 
     if divergence <= 10:
-        mix = [(item, min(divergence, 2 + index * 2)) for index, item in enumerate(direct)]
+        if divergence == 0:
+            mix = [(direct[0], 0)]
+        else:
+            # Four generic facets are enough to expand recall without firing a
+            # large, slow burst of nearly identical requests.
+            mix = [
+                (direct[1], divergence),
+                (direct[2], divergence),
+                (direct[4], divergence),
+                (direct[5], divergence),
+            ]
     elif divergence <= 25:
-        mix = [(adjacent[0], 24), (adjacent[1], 32)]
+        mix = [
+            (direct[0], 0),
+            (direct[1], min(divergence, 12)),
+            (direct[2], min(divergence, 16)),
+            (adjacent[0], min(divergence, 22)),
+            (adjacent[1], divergence),
+        ]
     elif divergence <= 55:
-        mix = [(adjacent[0], 35), (adjacent[1], 43), (cross[0], 58)]
+        mix = [(direct[0], 0), (adjacent[0], 35), (adjacent[1], 43), (cross[0], 58)]
     elif divergence <= 80:
-        mix = [(adjacent[0], 42), (cross[0], 62), (cross[1], 72), (cross[2], 80)]
+        mix = [(direct[0], 0), (adjacent[0], 42), (cross[0], 62), (cross[1], 72), (cross[2], 80)]
     else:
-        mix = [(cross[0], 72), (cross[1], 82), (cross[2], 90), (cross[3 % len(cross)], 96)]
+        mix = [(direct[0], 0), (cross[0], 72), (cross[1], 82), (cross[2], 90), (cross[3 % len(cross)], 96)]
 
     for (search_query, bridge, reason), distance in mix:
         label = "主题分面" if distance <= 10 else "跨域方向"
-        plans.append(SearchPlan(label, search_query, bridge, reason, distance))
+        plans.append(SearchPlan(label, search_query, bridge, reason, distance, query))
     return plans
 
 
 def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[SearchResult]:
     """Run one planned query against a SearXNG JSON endpoint."""
-    engine_groups = list(dict.fromkeys([SEARXNG_ENGINES, SEARXNG_FALLBACK_ENGINES]))
+    has_chinese = bool(re.search(r"[\u4e00-\u9fff]", plan.query))
+    # On the current SearXNG deployment, Bing mistranslates some one-character
+    # Chinese queries and the Baidu/Google adapters are CAPTCHA-blocked. Do not
+    # spend latency on sources whose output would be discarded by the anchor
+    # filter; use them normally for non-Chinese searches.
+    if has_chinese:
+        engine_groups = [SEARXNG_CONCEPT_ENGINES]
+    else:
+        engine_groups = list(dict.fromkeys([
+            SEARXNG_ENGINES,
+            SEARXNG_FALLBACK_ENGINES,
+            SEARXNG_CONCEPT_ENGINES,
+        ]))
     items: list[Any] = []
     last_error: Exception | None = None
 
-    def fetch_items(engines: str) -> list[Any]:
+    def fetch_items(engines: str, result_page: int) -> list[Any]:
         params = urllib.parse.urlencode(
             {
                 "q": plan.query,
@@ -379,7 +427,7 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
                 "safesearch": 1,
                 "categories": "general",
                 "engines": engines,
-                "pageno": page,
+                "pageno": result_page,
             }
         )
         request = urllib.request.Request(
@@ -395,8 +443,14 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
 
     # Primary and backup engines race each other. This avoids waiting for a
     # CAPTCHA-blocked source before trying the healthy one.
-    executor = ThreadPoolExecutor(max_workers=len(engine_groups), thread_name_prefix="searxng-engine")
-    futures = [executor.submit(fetch_items, engines) for engines in engine_groups]
+    # At divergence 0 there is only one plan, so later upstream pages provide
+    # normal search pagination. Once semantic facets are active, each facet
+    # contributes one page: requesting three pages for every facet would burst
+    # the upstream service and trigger its temporary rate limiter.
+    result_pages = [page, page + 1, page + 2] if has_chinese and plan.distance == 0 else [page]
+    requests = [(engines, result_page) for engines in engine_groups for result_page in result_pages]
+    executor = ThreadPoolExecutor(max_workers=len(requests), thread_name_prefix="searxng-engine")
+    futures = [executor.submit(fetch_items, engines, result_page) for engines, result_page in requests]
     try:
         for future in as_completed(futures, timeout=SEARXNG_TIMEOUT + 0.25):
             try:
@@ -417,9 +471,18 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
         raise last_error
 
     ranked: list[tuple[float, int, SearchResult]] = []
-    query_normalized = re.sub(r"\s+", "", plan.query).lower()
-    query_terms = [term.lower() for term in re.findall(r"[a-zA-Z0-9+#.]{2,}|[\u4e00-\u9fff]{2,}", plan.query)]
-    chinese_chunks = [query_normalized[index:index + 2] for index in range(max(0, len(query_normalized) - 1))]
+    def compact(value: str) -> str:
+        return "".join(re.findall(r"[a-zA-Z0-9+#.]+|[\u4e00-\u9fff]+", value.lower()))
+
+    query_normalized = compact(plan.query)
+    anchor_normalized = compact(plan.anchor)
+    # Whitespace-delimited Chinese concepts are kept as independent terms;
+    # unlike the old expression this intentionally supports one-character
+    # topics such as 鸟、树、水 and 电.
+    query_terms = [
+        term.lower()
+        for term in re.findall(r"[a-zA-Z0-9+#.]+|[\u4e00-\u9fff]+", plan.query)
+    ]
 
     for item in items:
         if not isinstance(item, dict):
@@ -433,8 +496,9 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
         result = SearchResult(title, url, snippet, source, display_url, plan.bridge, plan.reason, plan.distance)
         title_lower = title.lower()
         snippet_lower = snippet.lower()
-        title_compact = re.sub(r"\s+", "", title_lower)
-        snippet_compact = re.sub(r"\s+", "", snippet_lower)
+        title_compact = compact(title_lower)
+        snippet_compact = compact(snippet_lower)
+        combined_compact = title_compact + snippet_compact
         score = float(item.get("score") or 0)
         relevance_hits = 0
         if query_normalized and query_normalized in title_compact:
@@ -446,24 +510,33 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
         title_term_hits = sum(1 for term in query_terms if term in title_lower)
         snippet_term_hits = sum(1 for term in query_terms if term in snippet_lower)
         matched_terms = {term for term in query_terms if term in title_lower or term in snippet_lower}
-        title_chunk_hits = sum(1 for chunk in chinese_chunks if chunk in title_compact)
-        snippet_chunk_hits = sum(1 for chunk in chinese_chunks if chunk in snippet_compact)
         score += 7 * title_term_hits + 2 * snippet_term_hits
-        score += 2 * title_chunk_hits + 0.5 * snippet_chunk_hits
-        relevance_hits += title_term_hits + snippet_term_hits + title_chunk_hits + snippet_chunk_hits
+        relevance_hits += title_term_hits + snippet_term_hits
+
+        anchor_match = bool(anchor_normalized and anchor_normalized in combined_compact)
+        if anchor_match:
+            score += 24 if anchor_normalized in title_compact else 9
 
         # Search engines occasionally return CAPTCHA artefacts or unrelated
         # foreign pages. A detour is valid only when the page visibly shares
         # at least one term or Chinese bigram with its planned query.
-        if relevance_hits == 0 or (plan.distance > 0 and len(query_terms) > 1 and len(matched_terms) < 2):
+        if relevance_hits == 0:
+            continue
+        # At low divergence the original topic is a hard contract. At larger
+        # distances a page must instead substantiate at least two concepts in
+        # the planned bridge, so a random one-word collision is not enough.
+        if plan.distance <= 25 and anchor_normalized and not anchor_match:
+            continue
+        if plan.distance > 25 and len(query_terms) > 1 and len(matched_terms) < 2:
             continue
         ranked.append((score, len(ranked), result))
 
     ranked.sort(key=lambda entry: (-entry[0], entry[1]))
     results: list[SearchResult] = []
     source_counts: dict[str, int] = {}
+    per_source_limit = max(4, min(8, (limit + 1) // 2))
     for _score, _position, result in ranked:
-        if source_counts.get(result.source, 0) >= 2:
+        if source_counts.get(result.source, 0) >= per_source_limit:
             continue
         results.append(result)
         source_counts[result.source] = source_counts.get(result.source, 0) + 1
@@ -564,7 +637,9 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
     raw: list[SearchResult] = []
     searxng_available = True
     pool_limit = limit * MAX_RESULT_PAGES
-    per_plan = min(10, max(4, (pool_limit + len(plans) - 1) // len(plans) + 2))
+    # One healthy semantic facet should be able to provide more than one UI
+    # page when another upstream adapter is temporarily slow.
+    per_plan = min(20, max(12, (pool_limit + len(plans) - 1) // len(plans) + 5))
 
     # Each bridge is independent. Running them concurrently keeps a high
     # divergence search close to the latency of one SearXNG request instead
@@ -594,7 +669,10 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
     live_pool = deduplicate(raw, pool_limit)
     live_count = len(live_pool)
     result_pool = live_pool
-    if len(result_pool) < pool_limit:
+    # Curated links are an offline/demo safety net, never a way to inflate a
+    # partially working live search. Normal result counts come from the
+    # generic retrieval pipeline above.
+    if not result_pool:
         fallback = fallback_results(plans, pool_limit, include_original=has_original_curated_results(query), page=1)
         result_pool = deduplicate(result_pool + fallback, pool_limit)
 

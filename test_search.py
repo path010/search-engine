@@ -39,15 +39,27 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(plans[0].query, "代码优化")
         self.assertEqual(plans[0].distance, 0)
 
-    def test_broad_human_query_uses_direct_facets_at_low_divergence(self):
-        plans = build_search_plans("人", 2)
-        self.assertEqual(len(plans), 5)
+    def test_any_low_divergence_query_uses_generic_facets(self):
+        plans = build_search_plans("鸟", 2)
+        self.assertEqual(len(plans), 4)
         self.assertTrue(all(plan.distance <= 2 for plan in plans))
-        self.assertTrue(all(plan.bridge == "人类概念" for plan in plans))
+        self.assertEqual(
+            {plan.bridge for plan in plans},
+            {"概念解释", "分类体系", "历史演化", "应用影响"},
+        )
+        self.assertTrue(all(plan.anchor == "鸟" for plan in plans))
 
-    def test_broad_human_query_can_fill_three_stable_pages(self):
-        with patch("server.searxng_search", return_value=[]):
-            pages = [search("人", 2, 10, page=number) for number in (1, 2, 3)]
+    def test_arbitrary_query_can_fill_three_stable_pages_without_curated_data(self):
+        def generic_live_results(plan, requested_limit, _page=1):
+            return [__import__("server").SearchResult(
+                f"{plan.anchor} {plan.bridge} {index}",
+                f"https://generic-{plan.bridge}-{index}.example/item",
+                f"关于{plan.anchor}的通用检索结果", f"source-{index}.example", "example",
+                plan.bridge, plan.reason, plan.distance,
+            ) for index in range(requested_limit)]
+
+        with patch("server.searxng_search", side_effect=generic_live_results):
+            pages = [search("未配置词", 2, 10, page=number) for number in (1, 2, 3)]
         self.assertEqual(pages[0]["pagination"]["total_results"], 30)
         self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
         self.assertEqual([len(payload["results"]) for payload in pages], [10, 10, 10])
@@ -115,20 +127,42 @@ class SearchPlanTests(unittest.TestCase):
         request_urls = [call.args[0].full_url for call in mocked.call_args_list]
         self.assertTrue(any("format=json" in url for url in request_urls))
         self.assertTrue(any("language=zh-CN" in url for url in request_urls))
-        self.assertTrue(any("engines=baidu%2Cgoogle" in url for url in request_urls))
+        self.assertTrue(any("engines=yandex%2Czapmeta%2Cquark" in url for url in request_urls))
 
-    def test_searxng_retries_with_bing_when_primary_engines_are_empty(self):
+    def test_chinese_query_uses_concept_engines(self):
+        response = {"results": [{"title": "鸟的分类", "url": "https://example.com/birds", "content": "鸟类知识"}]}
+        plan = SearchPlan("主题分面", "鸟 分类", "分类体系", "分类。", 2, "鸟")
+        with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)) as mocked:
+            results = searxng_search(plan, 3)
+        self.assertTrue(results)
+        self.assertTrue(all("engines=yandex%2Czapmeta%2Cquark" in call.args[0].full_url for call in mocked.call_args_list))
+
+    def test_single_character_anchor_keeps_valid_result_and_filters_noise(self):
+        response = {"results": [
+            {"title": "鸟类演化", "url": "https://example.com/birds", "content": "鸟的起源"},
+            {"title": "Repurpose projects", "url": "https://noise.example.com/", "content": "unrelated English page"},
+        ]}
+        plan = SearchPlan("主题分面", "鸟 历史 演化", "历史演化", "历史。", 2, "鸟")
+        with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)):
+            results = searxng_search(plan, 4)
+        self.assertEqual([result.title for result in results], ["鸟类演化"])
+
+    def test_zero_divergence_can_recall_from_later_page(self):
         bing_payload = {
             "results": [
                 {"title": "嘉豪（网络流行词）", "url": "https://example.com/jiahao", "content": "嘉豪梗的含义与来源"}
             ]
         }
-        plan = SearchPlan("原主题", "嘉豪", "原始问题", "直接相关。", 0)
-        with patch("server.urllib.request.urlopen", side_effect=[fake_json_response({"results": []}), fake_json_response(bing_payload)]) as mocked:
+        plan = SearchPlan("原主题", "嘉豪", "原始问题", "直接相关。", 0, "嘉豪")
+
+        def response_by_page(request, **_kwargs):
+            return fake_json_response(bing_payload if "pageno=2" in request.full_url else {"results": []})
+
+        with patch("server.urllib.request.urlopen", side_effect=response_by_page) as mocked:
             results = searxng_search(plan, 3)
         self.assertEqual(results[0].title, "嘉豪（网络流行词）")
-        self.assertEqual(mocked.call_count, 2)
-        self.assertTrue(any("engines=bing" in call.args[0].full_url for call in mocked.call_args_list))
+        self.assertEqual(mocked.call_count, 3)
+        self.assertTrue(all("engines=yandex%2Czapmeta%2Cquark" in call.args[0].full_url for call in mocked.call_args_list))
 
     def test_unknown_query_does_not_use_unrelated_original_fallback(self):
         with patch("server.searxng_search", return_value=[]):
@@ -225,7 +259,8 @@ class SearchPlanTests(unittest.TestCase):
         plan = SearchPlan("原主题", "代码优化", "原始问题", "直接相关。", 0)
         with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)) as mocked:
             searxng_search(plan, 3, page=2)
-        self.assertTrue(all("pageno=2" in call.args[0].full_url for call in mocked.call_args_list))
+        requested_pages = {call.args[0].full_url.split("pageno=")[1].split("&")[0] for call in mocked.call_args_list}
+        self.assertEqual(requested_pages, {"2", "3", "4"})
 
         def paged_result(plan, requested_limit, page=1):
             return [__import__("server").SearchResult(
