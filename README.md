@@ -27,7 +27,10 @@ python server.py
 
 ```powershell
 $env:SEARXNG_ENGINES="baidu,google"
+$env:SEARXNG_FALLBACK_ENGINES="bing"
 ```
+
+当百度或 Google 因验证码、限流而返回空结果时，后端会自动改用 Bing。对于无法识别且所有实时源均无结果的词，页面不会再用无关精选网址凑数。
 
 ## 测试
 

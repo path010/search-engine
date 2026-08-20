@@ -25,6 +25,7 @@ DEFAULT_SEARXNG_URL = "http://127.0.0.1:8080"
 SEARXNG_URL = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL).strip().rstrip("/")
 SEARXNG_LANGUAGE = os.getenv("SEARXNG_LANGUAGE", "zh-CN").strip() or "zh-CN"
 SEARXNG_ENGINES = os.getenv("SEARXNG_ENGINES", "baidu,google").strip() or "baidu,google"
+SEARXNG_FALLBACK_ENGINES = os.getenv("SEARXNG_FALLBACK_ENGINES", "bing").strip() or "bing"
 
 
 @dataclass(frozen=True)
@@ -210,6 +211,11 @@ def profile_for(query: str) -> dict[str, Any]:
     }
 
 
+def has_known_profile(query: str) -> bool:
+    lowered = query.lower()
+    return any(any(keyword in lowered for keyword in profile["keywords"]) for profile in TOPIC_PROFILES)
+
+
 def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
     profile = profile_for(query)
     seed = int(hashlib.sha256(f"{query}:{divergence}".encode("utf-8")).hexdigest()[:12], 16)
@@ -242,26 +248,38 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
 
 def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
     """Run one planned query against a SearXNG JSON endpoint."""
-    params = urllib.parse.urlencode(
-        {
-            "q": plan.query,
-            "format": "json",
-            "language": SEARXNG_LANGUAGE,
-            "safesearch": 1,
-            "categories": "general",
-            "engines": SEARXNG_ENGINES,
-        }
-    )
-    request = urllib.request.Request(
-        f"{SEARXNG_URL}/search?{params}",
-        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-    )
-    with urllib.request.urlopen(request, timeout=6.0) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    engine_groups = list(dict.fromkeys([SEARXNG_ENGINES, SEARXNG_FALLBACK_ENGINES]))
+    items: list[Any] = []
+    last_error: Exception | None = None
+    for engines in engine_groups:
+        params = urllib.parse.urlencode(
+            {
+                "q": plan.query,
+                "format": "json",
+                "language": SEARXNG_LANGUAGE,
+                "safesearch": 1,
+                "categories": "general",
+                "engines": engines,
+            }
+        )
+        request = urllib.request.Request(
+            f"{SEARXNG_URL}/search?{params}",
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=6.0) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            response_items = payload.get("results")
+            if not isinstance(response_items, list):
+                raise ValueError("SearXNG response does not contain a results list")
+            if response_items:
+                items = response_items
+                break
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as error:
+            last_error = error
 
-    items = payload.get("results")
-    if not isinstance(items, list):
-        raise ValueError("SearXNG response does not contain a results list")
+    if not items and last_error is not None:
+        raise last_error
 
     ranked: list[tuple[float, int, SearchResult]] = []
     query_normalized = re.sub(r"\s+", "", plan.query).lower()
@@ -306,13 +324,14 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
     return results
 
 
-def fallback_results(plans: list[SearchPlan], limit: int) -> list[SearchResult]:
+def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool = True) -> list[SearchResult]:
     results: list[SearchResult] = []
     if not plans:
         return results
 
     # Round-robin by plan so the requested divergence controls both the
     # explanation and the returned websites, even when live search is offline.
+    plans = [plan for plan in plans if include_original or plan.bridge != "原始问题"]
     cursors = [0 for _ in plans]
     while len(results) < limit:
         added = False
@@ -366,7 +385,9 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
     results = deduplicate(raw, limit)
     live_count = len(results)
     if len(results) < limit:
-        results = deduplicate(results + fallback_results(plans, limit), limit)
+        known_profile = has_known_profile(query)
+        fallback = fallback_results(plans, limit, include_original=known_profile)
+        results = deduplicate(results + fallback, limit)
 
     if not live_count:
         mode = "fallback"

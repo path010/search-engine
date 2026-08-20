@@ -19,6 +19,10 @@ class FakeResponse:
         return self.payload.read()
 
 
+def fake_json_response(payload):
+    return FakeResponse(__import__("json").dumps(payload).encode("utf-8"))
+
+
 class SearchPlanTests(unittest.TestCase):
     def test_low_divergence_keeps_adjacent_queries(self):
         plans = build_search_plans("代码优化", 20)
@@ -76,6 +80,25 @@ class SearchPlanTests(unittest.TestCase):
         self.assertIn("format=json", request.full_url)
         self.assertIn("language=zh-CN", request.full_url)
         self.assertIn("engines=baidu%2Cgoogle", request.full_url)
+
+    def test_searxng_retries_with_bing_when_primary_engines_are_empty(self):
+        bing_payload = {
+            "results": [
+                {"title": "嘉豪（网络流行词）", "url": "https://example.com/jiahao", "content": "嘉豪梗的含义与来源"}
+            ]
+        }
+        plan = SearchPlan("原主题", "嘉豪", "原始问题", "直接相关。", 0)
+        with patch("server.urllib.request.urlopen", side_effect=[fake_json_response({"results": []}), fake_json_response(bing_payload)]) as mocked:
+            results = searxng_search(plan, 3)
+        self.assertEqual(results[0].title, "嘉豪（网络流行词）")
+        self.assertEqual(mocked.call_count, 2)
+        self.assertIn("engines=bing", mocked.call_args.args[0].full_url)
+
+    def test_unknown_query_does_not_use_unrelated_original_fallback(self):
+        with patch("server.searxng_search", return_value=[]):
+            payload = search("不存在的陌生词", 0, 10)
+        self.assertEqual(payload["mode"], "fallback")
+        self.assertEqual(payload["results"], [])
 
     def test_searxng_prioritizes_exact_title_and_limits_same_source(self):
         response = {
