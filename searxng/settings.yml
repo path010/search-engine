@@ -13,7 +13,7 @@ outgoing:
   # Several useful metasearch adapters need slightly more than SearXNG's
   # three-second default. The Beyond Search API still enforces its own bounded
   # total timeout, so one unhealthy source cannot hang the page indefinitely.
-  request_timeout: 5.0
+  request_timeout: 8.0
 
 server:
   bind_address: "0.0.0.0"

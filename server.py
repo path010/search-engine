@@ -27,9 +27,9 @@ SEARXNG_URL = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL).strip().rstrip("/")
 SEARXNG_LANGUAGE = os.getenv("SEARXNG_LANGUAGE", "zh-CN").strip() or "zh-CN"
 SEARXNG_ENGINES = os.getenv("SEARXNG_ENGINES", "baidu,google").strip() or "baidu,google"
 SEARXNG_FALLBACK_ENGINES = os.getenv("SEARXNG_FALLBACK_ENGINES", "bing").strip() or "bing"
-SEARXNG_CONCEPT_ENGINES = os.getenv("SEARXNG_CONCEPT_ENGINES", "yandex,zapmeta,quark").strip() or "yandex,zapmeta,quark"
-SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "6.0"))
-SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "6.5"))
+SEARXNG_CONCEPT_ENGINES = os.getenv("SEARXNG_CONCEPT_ENGINES", "yandex,zapmeta").strip() or "yandex,zapmeta"
+SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "8.5"))
+SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "9.0"))
 SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "120"))
 MAX_RESULT_PAGES = 3
 SEARCH_CACHE: dict[tuple[str, int, int], tuple[float, dict[str, Any]]] = {}
@@ -371,13 +371,12 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
         if divergence == 0:
             mix = [(direct[0], 0)]
         else:
-            # Four generic facets are enough to expand recall without firing a
-            # large, slow burst of nearly identical requests.
+            # Two broad facets normally yield 20–30 candidates. Keeping this
+            # bounded is important: request bursts cause public adapters to
+            # suspend themselves and turn a valid query into a zero-result UI.
             mix = [
                 (direct[1], divergence),
                 (direct[2], divergence),
-                (direct[4], divergence),
-                (direct[5], divergence),
             ]
     elif divergence <= 25:
         mix = [
@@ -408,7 +407,14 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
     # spend latency on sources whose output would be discarded by the anchor
     # filter; use them normally for non-Chinese searches.
     if has_chinese:
-        engine_groups = [SEARXNG_CONCEPT_ENGINES]
+        # Keep each adapter independent. A combined SearXNG engine group is
+        # all-or-nothing when one member times out, which made valid Chinese
+        # queries appear as zero-result searches.
+        engine_groups = [
+            engine.strip()
+            for engine in SEARXNG_CONCEPT_ENGINES.split(",")
+            if engine.strip()
+        ] or [SEARXNG_CONCEPT_ENGINES]
     else:
         engine_groups = list(dict.fromkeys([
             SEARXNG_ENGINES,
@@ -447,7 +453,9 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
     # normal search pagination. Once semantic facets are active, each facet
     # contributes one page: requesting three pages for every facet would burst
     # the upstream service and trigger its temporary rate limiter.
-    result_pages = [page, page + 1, page + 2] if has_chinese and plan.distance == 0 else [page]
+    # Each semantic facet queries one upstream page. Multiple engines are
+    # isolated above, so one can fail without erasing another engine's result.
+    result_pages = [page]
     requests = [(engines, result_page) for engines in engine_groups for result_page in result_pages]
     executor = ThreadPoolExecutor(max_workers=len(requests), thread_name_prefix="searxng-engine")
     futures = [executor.submit(fetch_items, engines, result_page) for engines, result_page in requests]
@@ -534,7 +542,7 @@ def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[Sear
     ranked.sort(key=lambda entry: (-entry[0], entry[1]))
     results: list[SearchResult] = []
     source_counts: dict[str, int] = {}
-    per_source_limit = max(4, min(8, (limit + 1) // 2))
+    per_source_limit = limit
     for _score, _position, result in ranked:
         if source_counts.get(result.source, 0) >= per_source_limit:
             continue

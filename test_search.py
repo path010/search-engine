@@ -41,11 +41,11 @@ class SearchPlanTests(unittest.TestCase):
 
     def test_any_low_divergence_query_uses_generic_facets(self):
         plans = build_search_plans("鸟", 2)
-        self.assertEqual(len(plans), 4)
+        self.assertEqual(len(plans), 2)
         self.assertTrue(all(plan.distance <= 2 for plan in plans))
         self.assertEqual(
             {plan.bridge for plan in plans},
-            {"概念解释", "分类体系", "历史演化", "应用影响"},
+            {"概念解释", "分类体系"},
         )
         self.assertTrue(all(plan.anchor == "鸟" for plan in plans))
 
@@ -127,7 +127,10 @@ class SearchPlanTests(unittest.TestCase):
         request_urls = [call.args[0].full_url for call in mocked.call_args_list]
         self.assertTrue(any("format=json" in url for url in request_urls))
         self.assertTrue(any("language=zh-CN" in url for url in request_urls))
-        self.assertTrue(any("engines=yandex%2Czapmeta%2Cquark" in url for url in request_urls))
+        self.assertEqual(
+            {engine for engine in ("yandex", "zapmeta") if any(f"engines={engine}" in url for url in request_urls)},
+            {"yandex", "zapmeta"},
+        )
 
     def test_chinese_query_uses_concept_engines(self):
         response = {"results": [{"title": "鸟的分类", "url": "https://example.com/birds", "content": "鸟类知识"}]}
@@ -135,7 +138,11 @@ class SearchPlanTests(unittest.TestCase):
         with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)) as mocked:
             results = searxng_search(plan, 3)
         self.assertTrue(results)
-        self.assertTrue(all("engines=yandex%2Czapmeta%2Cquark" in call.args[0].full_url for call in mocked.call_args_list))
+        self.assertEqual(mocked.call_count, 2)
+        self.assertEqual(
+            {engine for engine in ("yandex", "zapmeta") if any(f"engines={engine}" in call.args[0].full_url for call in mocked.call_args_list)},
+            {"yandex", "zapmeta"},
+        )
 
     def test_single_character_anchor_keeps_valid_result_and_filters_noise(self):
         response = {"results": [
@@ -147,7 +154,7 @@ class SearchPlanTests(unittest.TestCase):
             results = searxng_search(plan, 4)
         self.assertEqual([result.title for result in results], ["鸟类演化"])
 
-    def test_zero_divergence_can_recall_from_later_page(self):
+    def test_one_chinese_engine_can_succeed_when_another_is_empty(self):
         bing_payload = {
             "results": [
                 {"title": "嘉豪（网络流行词）", "url": "https://example.com/jiahao", "content": "嘉豪梗的含义与来源"}
@@ -155,14 +162,15 @@ class SearchPlanTests(unittest.TestCase):
         }
         plan = SearchPlan("原主题", "嘉豪", "原始问题", "直接相关。", 0, "嘉豪")
 
-        def response_by_page(request, **_kwargs):
-            return fake_json_response(bing_payload if "pageno=2" in request.full_url else {"results": []})
+        def response_by_engine(request, **_kwargs):
+            return fake_json_response(bing_payload if "engines=zapmeta" in request.full_url else {"results": []})
 
-        with patch("server.urllib.request.urlopen", side_effect=response_by_page) as mocked:
+        with patch("server.urllib.request.urlopen", side_effect=response_by_engine) as mocked:
             results = searxng_search(plan, 3)
         self.assertEqual(results[0].title, "嘉豪（网络流行词）")
-        self.assertEqual(mocked.call_count, 3)
-        self.assertTrue(all("engines=yandex%2Czapmeta%2Cquark" in call.args[0].full_url for call in mocked.call_args_list))
+        self.assertEqual(mocked.call_count, 2)
+        self.assertTrue(any("engines=yandex" in call.args[0].full_url for call in mocked.call_args_list))
+        self.assertTrue(any("engines=zapmeta" in call.args[0].full_url for call in mocked.call_args_list))
 
     def test_unknown_query_does_not_use_unrelated_original_fallback(self):
         with patch("server.searxng_search", return_value=[]):
@@ -260,7 +268,7 @@ class SearchPlanTests(unittest.TestCase):
         with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)) as mocked:
             searxng_search(plan, 3, page=2)
         requested_pages = {call.args[0].full_url.split("pageno=")[1].split("&")[0] for call in mocked.call_args_list}
-        self.assertEqual(requested_pages, {"2", "3", "4"})
+        self.assertEqual(requested_pages, {"2"})
 
         def paged_result(plan, requested_limit, page=1):
             return [__import__("server").SearchResult(
