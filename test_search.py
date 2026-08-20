@@ -126,6 +126,15 @@ class SearchPlanTests(unittest.TestCase):
         titles = [result["title"] for result in payload["results"]]
         self.assertFalse(any("MDN" in title or "web.dev" in title for title in titles))
 
+    def test_electricity_curated_pool_can_fill_three_pages(self):
+        with patch("server.searxng_search", return_value=[]):
+            pages = [search("电", 100, 10, page=number) for number in (1, 2, 3)]
+        self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
+        self.assertTrue(all(payload["results"] for payload in pages))
+        url_sets = [{result["url"] for result in payload["results"]} for payload in pages]
+        self.assertFalse(url_sets[0] & url_sets[1])
+        self.assertFalse(url_sets[1] & url_sets[2])
+
     def test_searxng_prioritizes_exact_title_and_limits_same_source(self):
         response = {
             "results": [
@@ -166,10 +175,10 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual([result.title for result in results], ["有线电报与莫尔斯电码"])
 
     def test_search_reports_searxng_mode(self):
-        def live_result(plan, _limit):
+        def live_result(plan, _limit, page=1):
             slug = __import__("urllib.parse").parse.quote(plan.query)
             return [__import__("server").SearchResult(
-                "实时结果", f"https://example.com/{slug}", "摘要", "example.com", "example.com", plan.bridge, plan.reason, plan.distance
+                f"实时结果 {page}", f"https://example.com/{slug}/{page}", "摘要", "example.com", "example.com", plan.bridge, plan.reason, plan.distance
             )]
 
         with patch("server.searxng_search", side_effect=live_result):
@@ -178,7 +187,7 @@ class SearchPlanTests(unittest.TestCase):
         self.assertTrue(payload["search_backend"]["available"])
 
     def test_search_runs_multiple_plans_concurrently_and_caches_result(self):
-        def slow_result(plan, _limit):
+        def slow_result(plan, _limit, _page=1):
             time.sleep(0.08)
             slug = __import__("urllib.parse").parse.quote(plan.query)
             return [__import__("server").SearchResult(
@@ -194,6 +203,42 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(mocked.call_count, 5)
         self.assertFalse(first["cached"])
         self.assertTrue(second["cached"])
+
+    def test_page_is_sent_to_searxng_and_changes_cache_key(self):
+        response = {"results": [{"title": "代码优化分页结果", "url": "https://example.com/page", "content": "代码优化"}]}
+        plan = SearchPlan("原主题", "代码优化", "原始问题", "直接相关。", 0)
+        with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)) as mocked:
+            searxng_search(plan, 3, page=2)
+        self.assertTrue(all("pageno=2" in call.args[0].full_url for call in mocked.call_args_list))
+
+        def paged_result(plan, requested_limit, page=1):
+            return [__import__("server").SearchResult(
+                f"{plan.query} 结果 {index}", f"https://example.com/{__import__('urllib.parse').parse.quote(plan.query)}/{index}", "摘要", f"source-{index}.example.com", "example.com", plan.bridge, plan.reason, plan.distance
+            ) for index in range(requested_limit)]
+
+        with patch("server.searxng_search", side_effect=paged_result):
+            first = search("代码优化", 0, 3, page=1)
+            second = search("代码优化", 0, 3, page=2)
+        self.assertNotEqual(first["results"][0]["url"], second["results"][0]["url"])
+        self.assertEqual(second["page"], 2)
+        self.assertGreaterEqual(first["pagination"]["total_pages"], 2)
+        self.assertTrue(second["cached"])
+
+    def test_candidate_pool_produces_three_non_overlapping_pages(self):
+        def many_results(plan, requested_limit, _page=1):
+            slug = __import__("urllib.parse").parse.quote(plan.query)
+            return [__import__("server").SearchResult(
+                f"{plan.query} {index}", f"https://source-{slug}-{index}.example/page", plan.query,
+                f"source-{slug}-{index}.example", "example.com", plan.bridge, plan.reason, plan.distance
+            ) for index in range(requested_limit)]
+
+        with patch("server.searxng_search", side_effect=many_results):
+            pages = [search("代码优化", 60, 10, page=number) for number in (1, 2, 3)]
+        url_sets = [{result["url"] for result in payload["results"]} for payload in pages]
+        self.assertTrue(all(len(urls) == 10 for urls in url_sets))
+        self.assertFalse(url_sets[0] & url_sets[1])
+        self.assertFalse(url_sets[1] & url_sets[2])
+        self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
 
 
 if __name__ == "__main__":

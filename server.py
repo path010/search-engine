@@ -30,6 +30,7 @@ SEARXNG_FALLBACK_ENGINES = os.getenv("SEARXNG_FALLBACK_ENGINES", "bing").strip()
 SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "3.0"))
 SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "3.5"))
 SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "120"))
+MAX_RESULT_PAGES = 3
 SEARCH_CACHE: dict[tuple[str, int, int], tuple[float, dict[str, Any]]] = {}
 
 
@@ -205,18 +206,34 @@ CURATED_LIBRARY: dict[str, list[dict[str, str]]] = {
     "生物电": [
         {"title": "动作电位：神经元如何用电传递信号", "url": "https://zh.wikipedia.org/wiki/%E5%8A%A8%E4%BD%9C%E7%94%B5%E4%BD%8D", "snippet": "动作电位是细胞膜电位快速变化的过程，是神经和肌肉传递信息的基础。"},
         {"title": "神经元：生命系统中的电信号", "url": "https://zh.wikipedia.org/wiki/%E7%A5%9E%E7%BB%8F%E5%85%83", "snippet": "神经元通过电信号和化学信号接收、处理并传递信息。"},
+        {"title": "Khan Academy：细胞膜电位的形成", "url": "https://www.khanacademy.org/science/biology/human-biology/neuron-nervous-system/a/the-membrane-potential", "snippet": "从离子浓度、选择性通透和电化学梯度理解神经细胞为何带电。"},
+        {"title": "OpenStax：神经组织与电信号", "url": "https://openstax.org/books/anatomy-and-physiology-2e/pages/12-2-nervous-tissue", "snippet": "开放教材系统介绍神经元、静息电位、动作电位和突触传递。"},
+        {"title": "Neuroscientifically Challenged：动作电位图解", "url": "https://neuroscientificallychallenged.com/posts/action-potential", "snippet": "通过图解观察钠钾离子流动如何构成神经元的电脉冲。"},
+        {"title": "BrainFacts：神经元如何交流", "url": "https://www.brainfacts.org/brain-anatomy-and-function/cells-and-circuits/2012/how-neurons-communicate", "snippet": "从电信号与化学突触两部分解释大脑中的信息传递。"},
     ],
     "大气电": [
         {"title": "闪电：发生在大气中的大尺度放电", "url": "https://zh.wikipedia.org/wiki/%E9%97%AA%E7%94%B5", "snippet": "闪电连接了电荷分离、大气运动、放电通道与雷暴天气。"},
         {"title": "球状闪电：罕见的大气电现象", "url": "https://zh.wikipedia.org/wiki/%E7%90%83%E7%8A%B6%E9%97%AA%E7%94%B5", "snippet": "球状闪电是一类罕见且仍有争议的大气发光与放电现象。"},
+        {"title": "NOAA SciJinks：闪电是怎样形成的", "url": "https://scijinks.gov/lightning/", "snippet": "美国海洋和大气管理局用图文解释雷暴云中的电荷分离与放电。"},
+        {"title": "UCAR：雷暴、闪电与大气科学", "url": "https://scied.ucar.edu/learning-zone/storms/lightning", "snippet": "从风暴内部的冰晶碰撞、电荷累积和先导通道理解闪电。"},
+        {"title": "英国气象局：关于闪电的事实", "url": "https://www.metoffice.gov.uk/weather/learn-about/weather/types-of-weather/thunder-and-lightning/facts-about-lightning", "snippet": "介绍闪电类型、温度、传播过程及雷暴天气安全知识。"},
+        {"title": "NASA Earthdata：从太空观测闪电", "url": "https://www.earthdata.nasa.gov/topics/atmosphere/lightning", "snippet": "利用卫星数据研究全球闪电分布以及它与气候和极端天气的联系。"},
     ],
     "生物仿生": [
         {"title": "电鳗：会发电的生物系统", "url": "https://zh.wikipedia.org/wiki/%E9%9B%BB%E9%B0%BB%E7%9B%AE", "snippet": "电鳗利用特化电器官产生电压，也能借助电场感知周围环境。"},
         {"title": "电感受：动物如何感知微弱电场", "url": "https://zh.wikipedia.org/wiki/%E7%94%B5%E6%84%9F%E5%8F%97", "snippet": "电感受把电与生物传感联系起来，并启发水下探测和仿生传感器。"},
+        {"title": "Britannica：电鳗如何产生电流", "url": "https://www.britannica.com/animal/electric-eel", "snippet": "介绍电鳗的电器官、放电方式、捕食行为与环境感知能力。"},
+        {"title": "Smithsonian Ocean：会发电和感知电的鱼", "url": "https://ocean.si.edu/ocean-life/fish/electric-fishes", "snippet": "观察不同鱼类如何利用电信号导航、交流、防御和捕食。"},
+        {"title": "National Geographic：电鳗并不是真正的鳗鱼", "url": "https://www.nationalgeographic.com/animals/fish/facts/electric-eel", "snippet": "从演化和生态角度认识电鳗的高压放电与弱电感知系统。"},
+        {"title": "AskNature：从生物电系统寻找工程灵感", "url": "https://asknature.org/strategy/electric-organs-generate-high-voltage/", "snippet": "把电器官的细胞串联结构转化为柔性电源和仿生能源设计线索。"},
     ],
     "通信史": [
         {"title": "电报：电如何第一次压缩通信距离", "url": "https://zh.wikipedia.org/wiki/%E7%94%B5%E6%8A%A5", "snippet": "有线电报利用电脉冲跨越长距离传递文字，改变了新闻、铁路与社会协作。"},
         {"title": "摩尔斯电码：把文字编码为电信号", "url": "https://zh.wikipedia.org/wiki/%E6%91%A9%E5%B0%94%E6%96%AF%E7%94%B5%E7%A0%81", "snippet": "摩尔斯电码将字符转换成长短信号，是早期电报通信的关键编码方法。"},
+        {"title": "Smithsonian：电报与电话藏品", "url": "https://americanhistory.si.edu/collections/object-groups/telegraph-and-telephone", "snippet": "通过实物档案观察电报机、线路和电话如何重塑远距离通信。"},
+        {"title": "美国国会图书馆：Samuel Morse 档案", "url": "https://www.loc.gov/collections/samuel-f-b-morse-papers/about-this-collection/", "snippet": "从书信、草图和记录了解摩尔斯及早期电报网络的发展。"},
+        {"title": "Britannica：电报的发明与演变", "url": "https://www.britannica.com/technology/telegraph", "snippet": "梳理光学电报、电磁电报、海底线路和全球通信网络的形成。"},
+        {"title": "Science Museum：改变世界的电报", "url": "https://www.sciencemuseum.org.uk/objects-and-stories/telecommunications/telegraphy-victorian-internet", "snippet": "从维多利亚时代的互联网理解电报如何改变商业、新闻和私人生活。"},
     ],
 }
 
@@ -290,7 +307,7 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
     return plans
 
 
-def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
+def searxng_search(plan: SearchPlan, limit: int = 3, page: int = 1) -> list[SearchResult]:
     """Run one planned query against a SearXNG JSON endpoint."""
     engine_groups = list(dict.fromkeys([SEARXNG_ENGINES, SEARXNG_FALLBACK_ENGINES]))
     items: list[Any] = []
@@ -305,6 +322,7 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
                 "safesearch": 1,
                 "categories": "general",
                 "engines": engines,
+                "pageno": page,
             }
         )
         request = urllib.request.Request(
@@ -327,8 +345,7 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
             try:
                 response_items = future.result()
                 if response_items:
-                    items = response_items
-                    break
+                    items.extend(response_items)
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as error:
                 last_error = error
     except TimeoutError as error:
@@ -398,7 +415,7 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
     return results
 
 
-def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool = True) -> list[SearchResult]:
+def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool = True, page: int = 1) -> list[SearchResult]:
     results: list[SearchResult] = []
     if not plans:
         return results
@@ -407,7 +424,9 @@ def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool
     # explanation and the returned websites, even when live search is offline.
     plans = [plan for plan in plans if include_original or plan.bridge != "原始问题"]
     cursors = [0 for _ in plans]
-    while len(results) < limit:
+    target_count = page * limit
+    generated: list[SearchResult] = []
+    while len(generated) < target_count:
         added = False
         for plan_index, plan in enumerate(plans):
             candidates = CURATED_LIBRARY.get(plan.bridge, [])
@@ -417,13 +436,14 @@ def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool
             item = candidates[cursor]
             cursors[plan_index] += 1
             source, display_url = host_label(item["url"])
-            results.append(SearchResult(item["title"], item["url"], item["snippet"], source, display_url, plan.bridge, plan.reason, plan.distance))
+            generated.append(SearchResult(item["title"], item["url"], item["snippet"], source, display_url, plan.bridge, plan.reason, plan.distance))
             added = True
-            if len(results) >= limit:
+            if len(generated) >= target_count:
                 break
         if not added:
             break
-    return results
+    start = (page - 1) * limit
+    return generated[start:start + limit]
 
 
 def deduplicate(results: list[SearchResult], limit: int) -> list[SearchResult]:
@@ -440,26 +460,64 @@ def deduplicate(results: list[SearchResult], limit: int) -> list[SearchResult]:
     return output
 
 
-def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
+def paginate_search_payload(base: dict[str, Any], page: int, limit: int, cached: bool) -> dict[str, Any]:
+    result_pool: list[SearchResult] = base["_result_pool"]
+    live_urls: set[str] = base["_live_urls"]
+    total_results = len(result_pool)
+    total_pages = max(1, min(MAX_RESULT_PAGES, (total_results + limit - 1) // limit))
+    page = min(max(1, page), total_pages)
+    start = (page - 1) * limit
+    results = result_pool[start:start + limit]
+    page_live_count = sum(1 for result in results if result.url in live_urls)
+    if not page_live_count:
+        mode = "fallback"
+    elif page_live_count < len(results):
+        mode = "mixed"
+    else:
+        mode = "searxng"
+
+    return {
+        **{key: value for key, value in base.items() if not key.startswith("_")},
+        "page": page,
+        "mode": mode,
+        "results": [asdict(result) for result in results],
+        "pagination": {
+            "page": page,
+            "page_size": limit,
+            "total_results": total_results,
+            "total_pages": total_pages,
+            "has_previous": page > 1,
+            "has_next": page < total_pages,
+        },
+        "cached": cached,
+    }
+
+
+def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[str, Any]:
     query = clean_text(query)[:160]
     divergence = max(0, min(100, int(divergence)))
     limit = max(3, min(16, int(limit)))
+    page = max(1, min(10, int(page)))
     cache_key = (query, divergence, limit)
     cached = SEARCH_CACHE.get(cache_key)
     if cached and time.monotonic() - cached[0] < SEARCH_CACHE_TTL:
-        return {**cached[1], "cached": True}
+        return paginate_search_payload(cached[1], page, limit, True)
 
     plans = build_search_plans(query, divergence)
     raw: list[SearchResult] = []
     searxng_available = True
-    per_plan = limit if len(plans) == 1 else (2 if divergence > 30 else 3)
+    pool_limit = limit * MAX_RESULT_PAGES
+    per_plan = min(10, max(4, (pool_limit + len(plans) - 1) // len(plans) + 2))
 
     # Each bridge is independent. Running them concurrently keeps a high
     # divergence search close to the latency of one SearXNG request instead
     # of adding the latency of four or five requests together.
     plan_results: list[list[SearchResult]] = [[] for _ in plans]
     executor = ThreadPoolExecutor(max_workers=min(5, len(plans)), thread_name_prefix="search-plan")
-    futures = {executor.submit(searxng_search, plan, per_plan): index for index, plan in enumerate(plans)}
+    # Several public engines return an empty list for pageno > 1. Build a
+    # larger candidate pool from page 1 of every semantic bridge, then page
+    # that combined, deduplicated pool locally.
+    futures = {executor.submit(searxng_search, plan, per_plan, 1): index for index, plan in enumerate(plans)}
     try:
         completed, pending = wait(futures, timeout=SEARCH_TOTAL_TIMEOUT)
         for future in completed:
@@ -476,27 +534,21 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
     for results_for_plan in plan_results:
         raw.extend(results_for_plan)
 
-    results = deduplicate(raw, limit)
-    live_count = len(results)
-    if len(results) < limit:
-        fallback = fallback_results(plans, limit, include_original=has_original_curated_results(query))
-        results = deduplicate(results + fallback, limit)
-
-    if not live_count:
-        mode = "fallback"
-    elif len(results) > live_count:
-        mode = "mixed"
-    else:
-        mode = "searxng"
+    live_pool = deduplicate(raw, pool_limit)
+    live_count = len(live_pool)
+    result_pool = live_pool
+    if len(result_pool) < pool_limit:
+        fallback = fallback_results(plans, pool_limit, include_original=has_original_curated_results(query), page=1)
+        result_pool = deduplicate(result_pool + fallback, pool_limit)
 
     detours = [
         {"query": plan.query, "bridge": plan.bridge, "distance": plan.distance}
         for plan in plans[1:]
     ]
-    payload = {
+    base_payload = {
         "query": query,
         "divergence": divergence,
-        "mode": mode,
+        "page_size": limit,
         "search_backend": {
             "name": "SearXNG",
             "available": searxng_available and live_count > 0,
@@ -504,15 +556,16 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
         "generated_at": int(time.time()),
         "plans": [asdict(plan) for plan in plans],
         "detours": detours,
-        "results": [asdict(result) for result in results],
+        "_result_pool": result_pool,
+        "_live_urls": {result.url for result in live_pool},
     }
-    SEARCH_CACHE[cache_key] = (time.monotonic(), payload)
+    SEARCH_CACHE[cache_key] = (time.monotonic(), base_payload)
     if len(SEARCH_CACHE) > 128:
         cutoff = time.monotonic() - SEARCH_CACHE_TTL
         for key, (created_at, _value) in list(SEARCH_CACHE.items()):
             if created_at < cutoff:
                 SEARCH_CACHE.pop(key, None)
-    return {**payload, "cached": False}
+    return paginate_search_payload(base_payload, page, limit, False)
 
 
 class BeyondSearchHandler(SimpleHTTPRequestHandler):
@@ -547,10 +600,11 @@ class BeyondSearchHandler(SimpleHTTPRequestHandler):
             try:
                 divergence = int(params.get("divergence", ["50"])[0])
                 limit = int(params.get("limit", ["10"])[0])
+                page = int(params.get("page", ["1"])[0])
             except ValueError:
-                self.send_json({"error": "偏离度必须是 0–100 的整数"}, HTTPStatus.BAD_REQUEST)
+                self.send_json({"error": "偏离度、页码和数量必须是整数"}, HTTPStatus.BAD_REQUEST)
                 return
-            self.send_json(search(query, divergence, limit))
+            self.send_json(search(query, divergence, limit, page))
             return
         super().do_GET()
 

@@ -110,7 +110,7 @@
         <p class="result-count">正在加载搜索结果…</p>
       </section>
 
-      <div class="pager" aria-label="搜索结果分页"><button class="active" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">下一页</button></div>
+      <div class="pager" id="resultPager" aria-label="搜索结果分页"></div>
       <div class="feedback-status" id="feedbackStatus" role="status"></div>
     </main>
 
@@ -136,8 +136,10 @@
     const resultsList = document.getElementById('resultsList');
     const detourList = document.getElementById('detourList');
     const divergenceBadge = document.getElementById('divergenceBadge');
+    const pager = document.getElementById('resultPager');
     const initialParams = new URLSearchParams(window.location.search);
     let currentDivergence = Math.max(0, Math.min(100, Number(initialParams.get('divergence') || 60)));
+    let currentPage = Math.max(1, Number(initialParams.get('page') || 1));
 
     const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
     const sourceInitial = source => (source || 'W').slice(0, 1).toUpperCase();
@@ -181,33 +183,52 @@
       document.querySelectorAll('.detour').forEach(button => {
         button.addEventListener('click', () => {
           query.value = button.dataset.query || button.textContent.trim();
-          runSearch(query.value, currentDivergence);
+          runSearch(query.value, currentDivergence, 1);
           window.scrollTo({top: 0, behavior: 'smooth'});
         });
       });
     }
 
-    async function runSearch(value, divergence) {
+    function renderPager(pagination) {
+      const page = pagination.page;
+      const pages = Array.from({length: pagination.total_pages}, (_, index) => index + 1);
+      if (pages.length <= 1) {
+        pager.innerHTML = '';
+        return;
+      }
+      pager.innerHTML = `${page > 1 ? '<button type="button" data-page="' + (page - 1) + '">上一页</button>' : ''}${pages.map(number => `<button type="button" data-page="${number}" class="${number === page ? 'active' : ''}" ${number === page ? 'aria-current="page"' : ''}>${number}</button>`).join('')}<button type="button" data-page="${page + 1}" ${pagination.has_next ? '' : 'disabled'}>下一页</button>`;
+      pager.querySelectorAll('[data-page]').forEach(button => {
+        button.addEventListener('click', () => {
+          if (button.disabled) return;
+          runSearch(query.value, currentDivergence, Number(button.dataset.page), 'push');
+          window.scrollTo({top: 0, behavior: 'smooth'});
+        });
+      });
+    }
+
+    async function runSearch(value, divergence, page = 1, historyMode = 'replace') {
       const searchQuery = value.trim() || '新的问题';
       currentDivergence = Math.max(0, Math.min(100, Number(divergence)));
+      currentPage = Math.max(1, Number(page));
       query.value = searchQuery;
       document.title = `${searchQuery} - 拓界搜索`;
       divergenceBadge.textContent = `偏离度 ${currentDivergence}`;
-      count.textContent = `正在生成偏离度 ${currentDivergence} 的搜索结果…`;
+      count.textContent = `正在加载第 ${currentPage} 页…`;
       status.textContent = '';
       resultsList.setAttribute('aria-busy', 'true');
       try {
-        const params = new URLSearchParams({q: searchQuery, divergence: currentDivergence, limit: 10});
+        const params = new URLSearchParams({q: searchQuery, divergence: currentDivergence, page: currentPage, limit: 10});
         const response = await fetch(`/api/search?${params.toString()}`);
         const data = await response.json();
         if (!response.ok) throw new Error(data.error || '搜索失败');
         resultsList.innerHTML = data.results.map(resultMarkup).join('');
         detourList.innerHTML = data.detours.map(item => `<button class="detour" type="button" data-query="${escapeHtml(item.query)}"><span class="detour-icon">⌕</span><strong>${escapeHtml(item.query)}</strong></button>`).join('');
+        renderPager(data.pagination);
         const sourceText = data.mode === 'searxng' ? 'SearXNG 实时网页' : data.mode === 'mixed' ? 'SearXNG 实时网页 + 精选补充' : '精选网址降级';
-        count.textContent = `${data.results.length} 条结果 · 偏离度 ${data.divergence} · ${sourceText}`;
+        count.textContent = `第 ${data.page} 页 · ${data.results.length} 条结果 · 偏离度 ${data.divergence} · ${sourceText}`;
         const nextUrl = new URL(window.location.href);
-        nextUrl.search = new URLSearchParams({q: searchQuery, divergence: currentDivergence}).toString();
-        history.replaceState(null, '', nextUrl);
+        nextUrl.search = new URLSearchParams({q: searchQuery, divergence: currentDivergence, page: currentPage}).toString();
+        history[historyMode === 'push' ? 'pushState' : 'replaceState'](null, '', nextUrl);
         bindRatings(searchQuery);
         bindDetours();
       } catch (error) {
@@ -220,11 +241,16 @@
 
     document.getElementById('resultsSearchForm').addEventListener('submit', event => {
       event.preventDefault();
-      runSearch(query.value, currentDivergence);
+      runSearch(query.value, currentDivergence, 1, 'push');
+    });
+
+    window.addEventListener('popstate', () => {
+      const params = new URLSearchParams(window.location.search);
+      runSearch(params.get('q') || query.value, Number(params.get('divergence') || currentDivergence), Number(params.get('page') || 1), 'replace');
     });
 
     const initialQuery = initialParams.get('q') || query.value;
-    runSearch(initialQuery, currentDivergence);
+    runSearch(initialQuery, currentDivergence, currentPage);
   </script>
 </body>
 </html>

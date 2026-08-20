@@ -34,6 +34,8 @@ $env:SEARXNG_FALLBACK_ENGINES="bing"
 
 多个偏离方向与备用搜索源都会并行检索；整次搜索默认最多等待 3.5 秒，相同查询默认缓存 120 秒。可通过 `SEARXNG_TIMEOUT`、`SEARCH_TOTAL_TIMEOUT` 和 `SEARCH_CACHE_TTL` 调整这些限制。
 
+结果页最多显示 3 页、每页 10 条。后端会先建立稳定的实时网页与高质量桥梁资料候选池，统一去重后分页；因此翻页不会重复请求不支持分页的搜索源，也不会在不同页重复同一网址。
+
 ## 测试
 
 ```powershell
