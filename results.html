@@ -224,8 +224,16 @@
         resultsList.innerHTML = data.results.map(resultMarkup).join('');
         detourList.innerHTML = data.detours.map(item => `<button class="detour" type="button" data-query="${escapeHtml(item.query)}"><span class="detour-icon">⌕</span><strong>${escapeHtml(item.query)}</strong></button>`).join('');
         renderPager(data.pagination);
-        const sourceText = data.mode === 'searxng' ? 'SearXNG 实时网页' : data.mode === 'mixed' ? 'SearXNG 实时网页 + 精选补充' : '精选网址降级';
-        count.textContent = `第 ${data.page} 页 · ${data.results.length} 条结果 · 偏离度 ${data.divergence} · ${sourceText}`;
+        const backend = data.search_backend || {};
+        const sourceText = data.mode === 'searxng' ? '实时网页' : data.mode === 'mixed' ? '实时网页 + 精选补充' : '精选网址降级';
+        if (!data.results.length && backend.available === false) {
+          count.textContent = `实时搜索源暂时不可用 · 偏离度 ${data.divergence}`;
+          status.innerHTML = `${escapeHtml(backend.message || '这不是“没有结果”，而是上游搜索源本次没有成功响应。')} <button type="button" id="retrySearch">重新搜索</button>`;
+          document.getElementById('retrySearch')?.addEventListener('click', () => runSearch(searchQuery, currentDivergence, currentPage));
+        } else {
+          count.textContent = `第 ${data.page} 页 · ${data.results.length} 条结果 · 偏离度 ${data.divergence} · ${sourceText}${data.stale ? '（缓存）' : ''}`;
+          if (backend.degraded) status.textContent = backend.message || '';
+        }
         const nextUrl = new URL(window.location.href);
         nextUrl.search = new URLSearchParams({q: searchQuery, divergence: currentDivergence, page: currentPage}).toString();
         history[historyMode === 'push' ? 'pushState' : 'replaceState'](null, '', nextUrl);

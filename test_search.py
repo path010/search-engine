@@ -177,6 +177,37 @@ class SearchPlanTests(unittest.TestCase):
             payload = search("不存在的陌生词", 0, 10)
         self.assertEqual(payload["mode"], "fallback")
         self.assertEqual(payload["results"], [])
+        self.assertTrue(payload["search_backend"]["available"])
+
+    def test_temporary_source_failure_is_not_cached_as_zero_results(self):
+        with patch("server.searxng_search", side_effect=TimeoutError("upstream timeout")) as mocked:
+            first = search("结果", 5, 10)
+            second = search("结果", 5, 10)
+        self.assertFalse(first["search_backend"]["available"])
+        self.assertTrue(first["search_backend"]["degraded"])
+        self.assertEqual(first["results"], [])
+        self.assertFalse(first["cached"])
+        self.assertFalse(second["cached"])
+        self.assertEqual(mocked.call_count, 4)
+
+    def test_partial_plan_failure_keeps_successful_results(self):
+        calls = 0
+
+        def sometimes_fails(plan, _limit, _page=1):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise TimeoutError("one source failed")
+            return [__import__("server").SearchResult(
+                "结果的定义", "https://example.com/result", "结果是过程产生的结论。",
+                "example.com", "example.com", plan.bridge, plan.reason, plan.distance,
+            )]
+
+        with patch("server.searxng_search", side_effect=sometimes_fails):
+            payload = search("结果", 5, 10)
+        self.assertEqual(len(payload["results"]), 1)
+        self.assertTrue(payload["search_backend"]["available"])
+        self.assertTrue(payload["search_backend"]["degraded"])
 
     def test_electricity_does_not_use_code_curated_fallback(self):
         with patch("server.searxng_search", return_value=[]):

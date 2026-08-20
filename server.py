@@ -598,7 +598,13 @@ def deduplicate(results: list[SearchResult], limit: int) -> list[SearchResult]:
     return output
 
 
-def paginate_search_payload(base: dict[str, Any], page: int, limit: int, cached: bool) -> dict[str, Any]:
+def paginate_search_payload(
+    base: dict[str, Any],
+    page: int,
+    limit: int,
+    cached: bool,
+    stale: bool = False,
+) -> dict[str, Any]:
     result_pool: list[SearchResult] = base["_result_pool"]
     live_urls: set[str] = base["_live_urls"]
     total_results = len(result_pool)
@@ -628,6 +634,7 @@ def paginate_search_payload(base: dict[str, Any], page: int, limit: int, cached:
             "has_next": page < total_pages,
         },
         "cached": cached,
+        "stale": stale,
     }
 
 
@@ -643,7 +650,7 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
 
     plans = build_search_plans(query, divergence)
     raw: list[SearchResult] = []
-    searxng_available = True
+    failed_plans = 0
     pool_limit = limit * MAX_RESULT_PAGES
     # One healthy semantic facet should be able to provide more than one UI
     # page when another upstream adapter is temporarily slow.
@@ -664,9 +671,9 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
             try:
                 plan_results[futures[future]] = future.result()
             except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError):
-                searxng_available = False
+                failed_plans += 1
         if pending:
-            searxng_available = False
+            failed_plans += len(pending)
             for future in pending:
                 future.cancel()
     finally:
@@ -694,7 +701,16 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
         "page_size": limit,
         "search_backend": {
             "name": "SearXNG",
-            "available": searxng_available and live_count > 0,
+            "available": live_count > 0 or failed_plans == 0,
+            "degraded": failed_plans > 0,
+            "failed_plans": failed_plans,
+            "message": (
+                "部分实时搜索源响应超时，已展示其余来源的结果。"
+                if live_count > 0 and failed_plans > 0
+                else "实时搜索源暂时不可用，请稍后重试。"
+                if live_count == 0 and failed_plans > 0
+                else ""
+            ),
         },
         "generated_at": int(time.time()),
         "plans": [asdict(plan) for plan in plans],
@@ -702,7 +718,14 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
         "_result_pool": result_pool,
         "_live_urls": {result.url for result in live_pool},
     }
-    SEARCH_CACHE[cache_key] = (time.monotonic(), base_payload)
+    # Never turn a temporary upstream outage into a two-minute cached
+    # zero-result page. If an older successful pool exists, serve it as stale
+    # data; otherwise return a degraded response that the UI can distinguish
+    # from a genuine "no matching page" result.
+    if live_count == 0 and failed_plans > 0 and cached and cached[1].get("_result_pool"):
+        return paginate_search_payload(cached[1], page, limit, True, stale=True)
+    if live_count > 0 or failed_plans == 0:
+        SEARCH_CACHE[cache_key] = (time.monotonic(), base_payload)
     if len(SEARCH_CACHE) > 128:
         cutoff = time.monotonic() - SEARCH_CACHE_TTL
         for key, (created_at, _value) in list(SEARCH_CACHE.items()):
