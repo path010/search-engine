@@ -31,7 +31,9 @@ SEARXNG_CONCEPT_ENGINES = os.getenv("SEARXNG_CONCEPT_ENGINES", "yandex,zapmeta")
 SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "8.5"))
 SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "9.0"))
 SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "120"))
-MAX_RESULT_PAGES = 3
+MAX_RESULT_PAGES = int(os.getenv("MAX_RESULT_PAGES", "50"))
+MAX_EXPANSION_BATCHES = 2
+MAX_EMPTY_BATCHES = 2
 SEARCH_CACHE: dict[tuple[str, int, int], tuple[float, dict[str, Any]]] = {}
 
 
@@ -608,7 +610,11 @@ def paginate_search_payload(
     result_pool: list[SearchResult] = base["_result_pool"]
     live_urls: set[str] = base["_live_urls"]
     total_results = len(result_pool)
-    total_pages = max(1, min(MAX_RESULT_PAGES, (total_results + limit - 1) // limit))
+    loaded_pages = max(1, (total_results + limit - 1) // limit)
+    can_expand = not base.get("_exhausted", True) and loaded_pages < MAX_RESULT_PAGES
+    # Show one discoverable next page while the upstream still has candidates.
+    # Its contents are fetched only when the user actually navigates there.
+    total_pages = min(MAX_RESULT_PAGES, loaded_pages + (1 if can_expand else 0))
     page = min(max(1, page), total_pages)
     start = (page - 1) * limit
     results = result_pool[start:start + limit]
@@ -630,41 +636,30 @@ def paginate_search_payload(
             "page_size": limit,
             "total_results": total_results,
             "total_pages": total_pages,
+            "loaded_pages": loaded_pages,
             "has_previous": page > 1,
-            "has_next": page < total_pages,
+            "has_next": page < loaded_pages or can_expand,
+            "can_expand": can_expand,
         },
         "cached": cached,
         "stale": stale,
     }
 
 
-def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[str, Any]:
-    query = clean_text(query)[:160]
-    divergence = max(0, min(100, int(divergence)))
-    limit = max(3, min(16, int(limit)))
-    page = max(1, min(10, int(page)))
-    cache_key = (query, divergence, limit)
-    cached = SEARCH_CACHE.get(cache_key)
-    if cached and time.monotonic() - cached[0] < SEARCH_CACHE_TTL:
-        return paginate_search_payload(cached[1], page, limit, True)
-
-    plans = build_search_plans(query, divergence)
+def fetch_search_batch(
+    plans: list[SearchPlan],
+    per_plan: int,
+    upstream_page: int,
+) -> tuple[list[SearchResult], int]:
+    """Fetch one upstream page for every semantic plan concurrently."""
     raw: list[SearchResult] = []
     failed_plans = 0
-    pool_limit = limit * MAX_RESULT_PAGES
-    # One healthy semantic facet should be able to provide more than one UI
-    # page when another upstream adapter is temporarily slow.
-    per_plan = min(20, max(12, (pool_limit + len(plans) - 1) // len(plans) + 5))
-
-    # Each bridge is independent. Running them concurrently keeps a high
-    # divergence search close to the latency of one SearXNG request instead
-    # of adding the latency of four or five requests together.
     plan_results: list[list[SearchResult]] = [[] for _ in plans]
     executor = ThreadPoolExecutor(max_workers=min(5, len(plans)), thread_name_prefix="search-plan")
-    # Several public engines return an empty list for pageno > 1. Build a
-    # larger candidate pool from page 1 of every semantic bridge, then page
-    # that combined, deduplicated pool locally.
-    futures = {executor.submit(searxng_search, plan, per_plan, 1): index for index, plan in enumerate(plans)}
+    futures = {
+        executor.submit(searxng_search, plan, per_plan, upstream_page): index
+        for index, plan in enumerate(plans)
+    }
     try:
         completed, pending = wait(futures, timeout=SEARCH_TOTAL_TIMEOUT)
         for future in completed:
@@ -680,6 +675,85 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
         executor.shutdown(wait=False, cancel_futures=True)
     for results_for_plan in plan_results:
         raw.extend(results_for_plan)
+    return raw, failed_plans
+
+
+def update_backend_status(base: dict[str, Any], failed_plans: int, plan_count: int) -> None:
+    live_count = len(base["_live_urls"])
+    base["search_backend"] = {
+        "name": "SearXNG",
+        "available": live_count > 0 or failed_plans < plan_count,
+        "degraded": failed_plans > 0,
+        "failed_plans": failed_plans,
+        "message": (
+            "部分实时搜索源响应超时，已展示其余来源的结果。"
+            if live_count > 0 and failed_plans > 0
+            else "实时搜索源暂时不可用，请稍后重试。"
+            if live_count == 0 and failed_plans == plan_count
+            else ""
+        ),
+    }
+
+
+def expand_result_pool(base: dict[str, Any], target_count: int, limit: int) -> None:
+    """Grow a cached pool on demand instead of pretending page one is all."""
+    attempts = 0
+    max_results = limit * MAX_RESULT_PAGES
+    plans: list[SearchPlan] = base["_plans"]
+    while (
+        len(base["_result_pool"]) < target_count
+        and not base.get("_exhausted", False)
+        and len(base["_result_pool"]) < max_results
+        and attempts < MAX_EXPANSION_BATCHES
+    ):
+        upstream_page = base["_next_upstream_page"]
+        raw, failed_plans = fetch_search_batch(
+            plans,
+            base["_per_plan"],
+            upstream_page,
+        )
+        base["_next_upstream_page"] = upstream_page + 1
+        before = len(base["_result_pool"])
+        merged = deduplicate(base["_result_pool"] + raw, max_results)
+        base["_result_pool"] = merged
+        base["_live_urls"].update(result.url for result in raw)
+        added = len(merged) - before
+
+        # A total outage is retryable and must not falsely mark the web as
+        # exhausted. Successful batches with no new URL count toward the real
+        # stopping condition.
+        if failed_plans < len(plans) and added == 0:
+            base["_empty_batches"] += 1
+        elif added > 0:
+            base["_empty_batches"] = 0
+        if base["_empty_batches"] >= MAX_EMPTY_BATCHES:
+            base["_exhausted"] = True
+        update_backend_status(base, failed_plans, len(plans))
+        attempts += 1
+        if failed_plans == len(plans):
+            break
+
+
+def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[str, Any]:
+    query = clean_text(query)[:160]
+    divergence = max(0, min(100, int(divergence)))
+    limit = max(3, min(16, int(limit)))
+    page = max(1, min(MAX_RESULT_PAGES, int(page)))
+    cache_key = (query, divergence, limit)
+    cached = SEARCH_CACHE.get(cache_key)
+    if cached and time.monotonic() - cached[0] < SEARCH_CACHE_TTL:
+        base_payload = cached[1]
+        # Revisiting page one is a pure cache hit. Only navigation beyond the
+        # loaded pool is allowed to spend more free upstream requests.
+        if page > 1 and len(base_payload["_result_pool"]) < page * limit:
+            expand_result_pool(base_payload, page * limit, limit)
+        SEARCH_CACHE[cache_key] = (time.monotonic(), base_payload)
+        return paginate_search_payload(base_payload, page, limit, True)
+
+    plans = build_search_plans(query, divergence)
+    pool_limit = limit * MAX_RESULT_PAGES
+    per_plan = min(20, max(12, (limit + len(plans) - 1) // len(plans) + 8))
+    raw, failed_plans = fetch_search_batch(plans, per_plan, 1)
 
     live_pool = deduplicate(raw, pool_limit)
     live_count = len(live_pool)
@@ -699,25 +773,19 @@ def search(query: str, divergence: int, limit: int = 10, page: int = 1) -> dict[
         "query": query,
         "divergence": divergence,
         "page_size": limit,
-        "search_backend": {
-            "name": "SearXNG",
-            "available": live_count > 0 or failed_plans == 0,
-            "degraded": failed_plans > 0,
-            "failed_plans": failed_plans,
-            "message": (
-                "部分实时搜索源响应超时，已展示其余来源的结果。"
-                if live_count > 0 and failed_plans > 0
-                else "实时搜索源暂时不可用，请稍后重试。"
-                if live_count == 0 and failed_plans > 0
-                else ""
-            ),
-        },
+        "search_backend": {},
         "generated_at": int(time.time()),
         "plans": [asdict(plan) for plan in plans],
         "detours": detours,
         "_result_pool": result_pool,
         "_live_urls": {result.url for result in live_pool},
+        "_plans": plans,
+        "_per_plan": per_plan,
+        "_next_upstream_page": 2,
+        "_empty_batches": 0 if live_count else 1,
+        "_exhausted": live_count == 0 and bool(result_pool),
     }
+    update_backend_status(base_payload, failed_plans, len(plans))
     # Never turn a temporary upstream outage into a two-minute cached
     # zero-result page. If an older successful pool exists, serve it as stale
     # data; otherwise return a degraded response that the UI can distinguish

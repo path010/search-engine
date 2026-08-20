@@ -191,12 +191,15 @@
 
     function renderPager(pagination) {
       const page = pagination.page;
-      const pages = Array.from({length: pagination.total_pages}, (_, index) => index + 1);
+      const first = Math.max(1, page - 2);
+      const last = Math.min(pagination.total_pages, first + 4);
+      const start = Math.max(1, last - 4);
+      const pages = Array.from({length: last - start + 1}, (_, index) => start + index);
       if (pages.length <= 1) {
         pager.innerHTML = '';
         return;
       }
-      pager.innerHTML = `${page > 1 ? '<button type="button" data-page="' + (page - 1) + '">上一页</button>' : ''}${pages.map(number => `<button type="button" data-page="${number}" class="${number === page ? 'active' : ''}" ${number === page ? 'aria-current="page"' : ''}>${number}</button>`).join('')}<button type="button" data-page="${page + 1}" ${pagination.has_next ? '' : 'disabled'}>下一页</button>`;
+      pager.innerHTML = `${page > 1 ? '<button type="button" data-page="' + (page - 1) + '">上一页</button>' : ''}${start > 1 ? '<span>…</span>' : ''}${pages.map(number => `<button type="button" data-page="${number}" class="${number === page ? 'active' : ''}" ${number === page ? 'aria-current="page"' : ''}>${number}</button>`).join('')}${last < pagination.total_pages ? '<span>…</span>' : ''}<button type="button" data-page="${page + 1}" ${pagination.has_next ? '' : 'disabled'}>下一页</button>`;
       pager.querySelectorAll('[data-page]').forEach(button => {
         button.addEventListener('click', () => {
           if (button.disabled) return;

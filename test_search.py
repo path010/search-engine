@@ -49,23 +49,22 @@ class SearchPlanTests(unittest.TestCase):
         )
         self.assertTrue(all(plan.anchor == "鸟" for plan in plans))
 
-    def test_arbitrary_query_can_fill_three_stable_pages_without_curated_data(self):
-        def generic_live_results(plan, requested_limit, _page=1):
+    def test_arbitrary_query_expands_beyond_three_pages_without_curated_data(self):
+        def generic_live_results(plan, requested_limit, upstream_page=1):
             return [__import__("server").SearchResult(
-                f"{plan.anchor} {plan.bridge} {index}",
-                f"https://generic-{plan.bridge}-{index}.example/item",
+                f"{plan.anchor} {plan.bridge} {upstream_page}-{index}",
+                f"https://generic-{plan.bridge}-{upstream_page}-{index}.example/item",
                 f"关于{plan.anchor}的通用检索结果", f"source-{index}.example", "example",
                 plan.bridge, plan.reason, plan.distance,
             ) for index in range(requested_limit)]
 
         with patch("server.searxng_search", side_effect=generic_live_results):
-            pages = [search("未配置词", 2, 10, page=number) for number in (1, 2, 3)]
-        self.assertEqual(pages[0]["pagination"]["total_results"], 30)
-        self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
-        self.assertEqual([len(payload["results"]) for payload in pages], [10, 10, 10])
+            pages = [search("未配置词", 2, 10, page=number) for number in (1, 2, 3, 4, 5)]
+        self.assertGreaterEqual(pages[-1]["pagination"]["total_results"], 50)
+        self.assertGreaterEqual(pages[-1]["pagination"]["total_pages"], 6)
+        self.assertEqual([len(payload["results"]) for payload in pages], [10, 10, 10, 10, 10])
         url_sets = [{result["url"] for result in payload["results"]} for payload in pages]
-        self.assertFalse(url_sets[0] & url_sets[1])
-        self.assertFalse(url_sets[1] & url_sets[2])
+        self.assertEqual(len(set().union(*url_sets)), 50)
 
     def test_high_divergence_uses_cross_domain_queries(self):
         plans = build_search_plans("代码优化", 90)
@@ -215,10 +214,10 @@ class SearchPlanTests(unittest.TestCase):
         titles = [result["title"] for result in payload["results"]]
         self.assertFalse(any("MDN" in title or "web.dev" in title for title in titles))
 
-    def test_electricity_curated_pool_can_fill_three_pages(self):
+    def test_electricity_curated_pool_is_available_offline(self):
         with patch("server.searxng_search", return_value=[]):
             pages = [search("电", 100, 10, page=number) for number in (1, 2, 3)]
-        self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
+        self.assertGreaterEqual(pages[0]["pagination"]["total_pages"], 3)
         self.assertTrue(all(payload["results"] for payload in pages))
         url_sets = [{result["url"] for result in payload["results"]} for payload in pages]
         self.assertFalse(url_sets[0] & url_sets[1])
@@ -287,7 +286,7 @@ class SearchPlanTests(unittest.TestCase):
         with patch("server.searxng_search", side_effect=slow_result) as mocked:
             first = search("代码优化", 60, 10)
             elapsed = time.perf_counter() - started
-            second = search("代码优化", 60, 10)
+            second = search("代码优化", 60, 10, page=1)
         self.assertLess(elapsed, 0.25)
         self.assertEqual(mocked.call_count, 5)
         self.assertFalse(first["cached"])
@@ -328,7 +327,53 @@ class SearchPlanTests(unittest.TestCase):
         self.assertTrue(all(len(urls) == 10 for urls in url_sets))
         self.assertFalse(url_sets[0] & url_sets[1])
         self.assertFalse(url_sets[1] & url_sets[2])
-        self.assertEqual(pages[0]["pagination"]["total_pages"], 3)
+        self.assertGreaterEqual(pages[0]["pagination"]["total_pages"], 3)
+
+    def test_dynamic_pagination_requests_later_upstream_pages_only_on_demand(self):
+        requested_pages = []
+
+        def paged_results(plan, requested_limit, upstream_page=1):
+            requested_pages.append(upstream_page)
+            return [__import__("server").SearchResult(
+                f"{plan.query} p{upstream_page}-{index}",
+                f"https://page-{upstream_page}-{index}.example/{__import__('urllib.parse').parse.quote(plan.query)}",
+                plan.query, f"source-{index}.example", "example", plan.bridge, plan.reason, plan.distance,
+            ) for index in range(requested_limit)]
+
+        with patch("server.searxng_search", side_effect=paged_results):
+            first = search("动态分页", 0, 10, page=1)
+            repeated_first = search("动态分页", 0, 10, page=1)
+            fourth = search("动态分页", 0, 10, page=4)
+
+        self.assertEqual(requested_pages[:1], [1])
+        self.assertEqual(requested_pages.count(1), 1)
+        self.assertIn(2, requested_pages)
+        self.assertIn(3, requested_pages)
+        self.assertTrue(first["pagination"]["has_next"])
+        self.assertTrue(repeated_first["cached"])
+        self.assertEqual(fourth["page"], 4)
+        self.assertEqual(len(fourth["results"]), 10)
+
+    def test_dynamic_pagination_stops_after_two_empty_batches(self):
+        def first_page_only(plan, requested_limit, upstream_page=1):
+            if upstream_page > 1:
+                return []
+            return [__import__("server").SearchResult(
+                f"{plan.query} {index}", f"https://only-first-{index}.example", plan.query,
+                f"source-{index}.example", "example", plan.bridge, plan.reason, plan.distance,
+            ) for index in range(requested_limit)]
+
+        with patch("server.searxng_search", side_effect=first_page_only) as mocked:
+            first = search("有限结果", 0, 10, page=1)
+            end = search("有限结果", 0, 10, page=3)
+            repeated = search("有限结果", 0, 10, page=3)
+
+        self.assertTrue(first["pagination"]["has_next"])
+        self.assertFalse(end["pagination"]["has_next"])
+        self.assertFalse(end["pagination"]["can_expand"])
+        self.assertEqual(end["page"], end["pagination"]["loaded_pages"])
+        self.assertEqual(mocked.call_count, 3)
+        self.assertTrue(repeated["cached"])
 
 
 if __name__ == "__main__":
