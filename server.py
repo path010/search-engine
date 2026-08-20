@@ -24,6 +24,7 @@ USER_AGENT = "Mozilla/5.0 (compatible; BeyondSearchMVP/0.1)"
 DEFAULT_SEARXNG_URL = "http://127.0.0.1:8080"
 SEARXNG_URL = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL).strip().rstrip("/")
 SEARXNG_LANGUAGE = os.getenv("SEARXNG_LANGUAGE", "zh-CN").strip() or "zh-CN"
+SEARXNG_ENGINES = os.getenv("SEARXNG_ENGINES", "baidu,google").strip() or "baidu,google"
 
 
 @dataclass(frozen=True)
@@ -223,7 +224,9 @@ def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
     cross = rotate(list(profile["cross"]))
     plans = [SearchPlan("原主题", query, "原始问题", "保留与输入直接相关的高质量结果，避免搜索完全失焦。", 0)]
 
-    if divergence <= 25:
+    if divergence <= 10:
+        mix = []
+    elif divergence <= 25:
         mix = [(adjacent[0], 24), (adjacent[1], 32)]
     elif divergence <= 55:
         mix = [(adjacent[0], 35), (adjacent[1], 43), (cross[0], 58)]
@@ -246,6 +249,7 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
             "language": SEARXNG_LANGUAGE,
             "safesearch": 1,
             "categories": "general",
+            "engines": SEARXNG_ENGINES,
         }
     )
     request = urllib.request.Request(
@@ -259,7 +263,11 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
     if not isinstance(items, list):
         raise ValueError("SearXNG response does not contain a results list")
 
-    results: list[SearchResult] = []
+    ranked: list[tuple[float, int, SearchResult]] = []
+    query_normalized = re.sub(r"\s+", "", plan.query).lower()
+    query_terms = [term.lower() for term in re.findall(r"[a-zA-Z0-9+#.]{2,}|[\u4e00-\u9fff]{2,}", plan.query)]
+    chinese_chunks = [query_normalized[index:index + 2] for index in range(max(0, len(query_normalized) - 1))]
+
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -269,7 +277,30 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
         if not title or not url or urllib.parse.urlparse(url).scheme not in {"http", "https"}:
             continue
         source, display_url = host_label(url)
-        results.append(SearchResult(title, url, snippet, source, display_url, plan.bridge, plan.reason, plan.distance))
+        result = SearchResult(title, url, snippet, source, display_url, plan.bridge, plan.reason, plan.distance)
+        title_lower = title.lower()
+        snippet_lower = snippet.lower()
+        title_compact = re.sub(r"\s+", "", title_lower)
+        snippet_compact = re.sub(r"\s+", "", snippet_lower)
+        score = float(item.get("score") or 0)
+        if query_normalized and query_normalized in title_compact:
+            score += 30
+        elif query_normalized and query_normalized in snippet_compact:
+            score += 10
+        score += sum(7 for term in query_terms if term in title_lower)
+        score += sum(2 for term in query_terms if term in snippet_lower)
+        score += sum(2 for chunk in chinese_chunks if chunk in title_compact)
+        score += sum(0.5 for chunk in chinese_chunks if chunk in snippet_compact)
+        ranked.append((score, len(ranked), result))
+
+    ranked.sort(key=lambda entry: (-entry[0], entry[1]))
+    results: list[SearchResult] = []
+    source_counts: dict[str, int] = {}
+    for _score, _position, result in ranked:
+        if source_counts.get(result.source, 0) >= 2:
+            continue
+        results.append(result)
+        source_counts[result.source] = source_counts.get(result.source, 0) + 1
         if len(results) >= limit:
             break
     return results
@@ -323,7 +354,7 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
     plans = build_search_plans(query, divergence)
     raw: list[SearchResult] = []
     searxng_available = True
-    per_plan = 2 if divergence > 30 else 3
+    per_plan = limit if len(plans) == 1 else (2 if divergence > 30 else 3)
 
     for plan in plans:
         try:

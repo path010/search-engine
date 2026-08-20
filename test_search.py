@@ -21,9 +21,15 @@ class FakeResponse:
 
 class SearchPlanTests(unittest.TestCase):
     def test_low_divergence_keeps_adjacent_queries(self):
-        plans = build_search_plans("代码优化", 10)
+        plans = build_search_plans("代码优化", 20)
         self.assertEqual(plans[0].query, "代码优化")
         self.assertLessEqual(max(plan.distance for plan in plans), 32)
+
+    def test_zero_divergence_only_searches_original_query(self):
+        plans = build_search_plans("代码优化", 0)
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(plans[0].query, "代码优化")
+        self.assertEqual(plans[0].distance, 0)
 
     def test_high_divergence_uses_cross_domain_queries(self):
         plans = build_search_plans("代码优化", 90)
@@ -69,6 +75,22 @@ class SearchPlanTests(unittest.TestCase):
         request = mocked.call_args.args[0]
         self.assertIn("format=json", request.full_url)
         self.assertIn("language=zh-CN", request.full_url)
+        self.assertIn("engines=baidu%2Cgoogle", request.full_url)
+
+    def test_searxng_prioritizes_exact_title_and_limits_same_source(self):
+        response = {
+            "results": [
+                {"title": "速度优化 - 芯片文档", "url": "https://docs.example.com/a", "content": "提高代码速度"},
+                {"title": "速度优化 - 另一芯片", "url": "https://docs.example.com/b", "content": "提高代码速度"},
+                {"title": "速度优化 - 第三芯片", "url": "https://docs.example.com/c", "content": "提高代码速度"},
+                {"title": "代码优化完整指南", "url": "https://guide.example.org/", "content": "编程性能最佳实践"},
+            ]
+        }
+        plan = SearchPlan("原主题", "代码优化", "原始问题", "直接相关。", 0)
+        with patch("server.urllib.request.urlopen", return_value=FakeResponse(__import__("json").dumps(response).encode("utf-8"))):
+            results = searxng_search(plan, 4)
+        self.assertEqual(results[0].title, "代码优化完整指南")
+        self.assertLessEqual(sum(result.source == "docs.example.com" for result in results), 2)
 
     def test_search_reports_searxng_mode(self):
         def live_result(plan, _limit):
@@ -78,7 +100,7 @@ class SearchPlanTests(unittest.TestCase):
             )]
 
         with patch("server.searxng_search", side_effect=live_result):
-            payload = search("代码优化", 10, 3)
+            payload = search("代码优化", 20, 3)
         self.assertEqual(payload["mode"], "searxng")
         self.assertTrue(payload["search_backend"]["available"])
 

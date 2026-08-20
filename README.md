@@ -23,6 +23,12 @@ python server.py
 
 该实例必须在 `settings.yml` 的 `search.formats` 中启用 `json`。不建议把随机公共实例作为正式后端，它们通常禁用 JSON 接口或有严格限流。
 
+默认中文检索会聚合百度和 Google，再按查询词命中程度重排。如果需要调整搜索源，可以设置：
+
+```powershell
+$env:SEARXNG_ENGINES="baidu,google"
+```
+
 ## 测试
 
 ```powershell
