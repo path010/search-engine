@@ -51,7 +51,22 @@ class SearchResult:
 
 TOPIC_PROFILES: list[dict[str, Any]] = [
     {
+        "keywords": ("电", "电力", "电气", "电能", "电流", "electric", "electricity"),
+        "adjacent": [
+            ("电的产生 电场 电流 电磁学", "电磁现象", "从日常用电回到电荷、电场和电流的物理基础。"),
+            ("电网 储能 峰谷调度 可再生能源", "能源系统", "电无法大规模直接储存，因此会连接到电网平衡、储能与能源转型。"),
+            ("电气安全 接地 漏电保护", "安全工程", "电的使用依赖接地、绝缘和保护装置来控制不可见的风险。"),
+        ],
+        "cross": [
+            ("神经元 动作电位 生物电", "生物电", "神经和肌肉也依靠电位差传递信息，把电从机器延伸到生命。"),
+            ("闪电 雷暴 大气放电", "大气电", "闪电是自然界大尺度放电现象，把家用电延伸到天气系统。"),
+            ("电鳗 电器官 电感知 仿生", "生物仿生", "一些生物会发电或感知电场，为传感器和仿生工程提供另一条路径。"),
+            ("有线电报 莫尔斯 电信史", "通信史", "电最早改变社会的方式之一是跨越距离传递信息。"),
+        ],
+    },
+    {
         "keywords": ("代码", "编程", "软件", "程序", "开发", "算法", "性能", "debug", "coding"),
+        "original_curated": True,
         "adjacent": [
             ("软件架构中的复杂度控制", "复杂度控制", "从局部优化扩展到系统结构与长期维护。"),
             ("认知负荷 工具设计", "认知负荷", "代码复杂度最终会转化为人的理解成本。"),
@@ -102,11 +117,11 @@ GENERIC_PROFILE = {
         ("{q} 社会影响", "社会联系", "观察这个问题如何进入更大的社会结构。"),
     ],
     "cross": [
-        ("公共领域 数字档案", "数字档案", "从即时答案转向长期保存的历史材料。"),
-        ("传统手工艺 修复 方法", "修复思维", "修复实践能提供关于耐心、边界和误差的另一种理解。"),
-        ("自然观察 物候 日记", "慢观察", "自然观察提供一种与快速获取信息相反的认知节奏。"),
-        ("地图 制图史 视觉文化", "空间表达", "地图展示了知识如何通过空间结构被重新组织。"),
-        ("海底电缆 维修", "隐形基础设施", "看不见的基础设施常能揭示系统真正依赖的结构。"),
+        ("{q} 博物馆 馆藏 历史", "文化史", "从当下概念追溯它在博物馆、档案与历史中的变化。"),
+        ("{q} 修复 维护 方法", "修复思维", "观察这个对象如何损坏、维护和恢复，建立一条实践性的跨域联系。"),
+        ("{q} 自然界 仿生", "自然类比", "寻找自然界中与这个概念相似的结构或机制。"),
+        ("{q} 地图 地理 分布", "空间表达", "把问题放到地图和地理分布中，观察空间差异。"),
+        ("{q} 基础设施 社会系统", "系统联系", "观察这个概念如何嵌入基础设施和更大的社会系统。"),
     ],
 }
 
@@ -182,6 +197,22 @@ CURATED_LIBRARY: dict[str, list[dict[str, str]]] = {
         {"title": "Submarine Cable Map：全球海底电缆地图", "url": "https://www.submarinecablemap.com/", "snippet": "可视化连接全球互联网的海底光缆与登陆点。"},
         {"title": "The Internet's Undersea World", "url": "https://99percentinvisible.org/episode/episode-70-the-great-undersea-cable/", "snippet": "从设计与历史角度理解隐藏在海底的通信基础设施。"},
     ],
+    "生物电": [
+        {"title": "动作电位：神经元如何用电传递信号", "url": "https://zh.wikipedia.org/wiki/%E5%8A%A8%E4%BD%9C%E7%94%B5%E4%BD%8D", "snippet": "动作电位是细胞膜电位快速变化的过程，是神经和肌肉传递信息的基础。"},
+        {"title": "神经元：生命系统中的电信号", "url": "https://zh.wikipedia.org/wiki/%E7%A5%9E%E7%BB%8F%E5%85%83", "snippet": "神经元通过电信号和化学信号接收、处理并传递信息。"},
+    ],
+    "大气电": [
+        {"title": "闪电：发生在大气中的大尺度放电", "url": "https://zh.wikipedia.org/wiki/%E9%97%AA%E7%94%B5", "snippet": "闪电连接了电荷分离、大气运动、放电通道与雷暴天气。"},
+        {"title": "球状闪电：罕见的大气电现象", "url": "https://zh.wikipedia.org/wiki/%E7%90%83%E7%8A%B6%E9%97%AA%E7%94%B5", "snippet": "球状闪电是一类罕见且仍有争议的大气发光与放电现象。"},
+    ],
+    "生物仿生": [
+        {"title": "电鳗：会发电的生物系统", "url": "https://zh.wikipedia.org/wiki/%E9%9B%BB%E9%B0%BB%E7%9B%AE", "snippet": "电鳗利用特化电器官产生电压，也能借助电场感知周围环境。"},
+        {"title": "电感受：动物如何感知微弱电场", "url": "https://zh.wikipedia.org/wiki/%E7%94%B5%E6%84%9F%E5%8F%97", "snippet": "电感受把电与生物传感联系起来，并启发水下探测和仿生传感器。"},
+    ],
+    "通信史": [
+        {"title": "电报：电如何第一次压缩通信距离", "url": "https://zh.wikipedia.org/wiki/%E7%94%B5%E6%8A%A5", "snippet": "有线电报利用电脉冲跨越长距离传递文字，改变了新闻、铁路与社会协作。"},
+        {"title": "摩尔斯电码：把文字编码为电信号", "url": "https://zh.wikipedia.org/wiki/%E6%91%A9%E5%B0%94%E6%96%AF%E7%94%B5%E7%A0%81", "snippet": "摩尔斯电码将字符转换成长短信号，是早期电报通信的关键编码方法。"},
+    ],
 }
 
 
@@ -200,20 +231,28 @@ def host_label(url: str) -> tuple[str, str]:
     return host, display.replace("/", " › ")
 
 
+def profile_matches(profile: dict[str, Any], query: str) -> bool:
+    lowered = query.lower().strip()
+    return any(lowered == keyword if len(keyword) == 1 else keyword in lowered for keyword in profile["keywords"])
+
+
 def profile_for(query: str) -> dict[str, Any]:
     lowered = query.lower()
     for profile in TOPIC_PROFILES:
-        if any(keyword in lowered for keyword in profile["keywords"]):
+        if profile_matches(profile, lowered):
             return profile
     return {
         "adjacent": [(q.format(q=query), bridge, reason) for q, bridge, reason in GENERIC_PROFILE["adjacent"]],
-        "cross": GENERIC_PROFILE["cross"],
+        "cross": [(q.format(q=query), bridge, reason) for q, bridge, reason in GENERIC_PROFILE["cross"]],
     }
 
 
 def has_known_profile(query: str) -> bool:
-    lowered = query.lower()
-    return any(any(keyword in lowered for keyword in profile["keywords"]) for profile in TOPIC_PROFILES)
+    return any(profile_matches(profile, query) for profile in TOPIC_PROFILES)
+
+
+def has_original_curated_results(query: str) -> bool:
+    return any(profile.get("original_curated", False) and profile_matches(profile, query) for profile in TOPIC_PROFILES)
 
 
 def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
@@ -301,14 +340,27 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
         title_compact = re.sub(r"\s+", "", title_lower)
         snippet_compact = re.sub(r"\s+", "", snippet_lower)
         score = float(item.get("score") or 0)
+        relevance_hits = 0
         if query_normalized and query_normalized in title_compact:
             score += 30
+            relevance_hits += 3
         elif query_normalized and query_normalized in snippet_compact:
             score += 10
-        score += sum(7 for term in query_terms if term in title_lower)
-        score += sum(2 for term in query_terms if term in snippet_lower)
-        score += sum(2 for chunk in chinese_chunks if chunk in title_compact)
-        score += sum(0.5 for chunk in chinese_chunks if chunk in snippet_compact)
+            relevance_hits += 2
+        title_term_hits = sum(1 for term in query_terms if term in title_lower)
+        snippet_term_hits = sum(1 for term in query_terms if term in snippet_lower)
+        matched_terms = {term for term in query_terms if term in title_lower or term in snippet_lower}
+        title_chunk_hits = sum(1 for chunk in chinese_chunks if chunk in title_compact)
+        snippet_chunk_hits = sum(1 for chunk in chinese_chunks if chunk in snippet_compact)
+        score += 7 * title_term_hits + 2 * snippet_term_hits
+        score += 2 * title_chunk_hits + 0.5 * snippet_chunk_hits
+        relevance_hits += title_term_hits + snippet_term_hits + title_chunk_hits + snippet_chunk_hits
+
+        # Search engines occasionally return CAPTCHA artefacts or unrelated
+        # foreign pages. A detour is valid only when the page visibly shares
+        # at least one term or Chinese bigram with its planned query.
+        if relevance_hits == 0 or (plan.distance > 0 and len(query_terms) > 1 and len(matched_terms) < 2):
+            continue
         ranked.append((score, len(ranked), result))
 
     ranked.sort(key=lambda entry: (-entry[0], entry[1]))
@@ -336,7 +388,7 @@ def fallback_results(plans: list[SearchPlan], limit: int, include_original: bool
     while len(results) < limit:
         added = False
         for plan_index, plan in enumerate(plans):
-            candidates = CURATED_LIBRARY.get(plan.bridge, DEFAULT_CURATED)
+            candidates = CURATED_LIBRARY.get(plan.bridge, [])
             cursor = cursors[plan_index]
             if cursor >= len(candidates):
                 continue
@@ -385,8 +437,7 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
     results = deduplicate(raw, limit)
     live_count = len(results)
     if len(results) < limit:
-        known_profile = has_known_profile(query)
-        fallback = fallback_results(plans, limit, include_original=known_profile)
+        fallback = fallback_results(plans, limit, include_original=has_original_curated_results(query))
         results = deduplicate(results + fallback, limit)
 
     if not live_count:

@@ -40,6 +40,22 @@ class SearchPlanTests(unittest.TestCase):
         self.assertGreaterEqual(min(plan.distance for plan in plans[1:]), 72)
         self.assertTrue(any("园林" in plan.query or "城市" in plan.query or "钟表" in plan.query for plan in plans))
 
+    def test_electricity_divergence_has_explainable_bridges(self):
+        plans = build_search_plans("电", 100)
+        self.assertEqual(plans[0].query, "电")
+        bridges = {plan.bridge for plan in plans[1:]}
+        self.assertEqual(bridges, {"生物电", "大气电", "生物仿生", "通信史"})
+        self.assertTrue(all(any(term in plan.query for term in ("电", "闪电", "神经元")) for plan in plans[1:]))
+
+    def test_single_character_electricity_profile_does_not_capture_movies(self):
+        plans = build_search_plans("电影", 100)
+        self.assertTrue(all("电影" in plan.query for plan in plans[1:]))
+        self.assertNotIn("生物电", {plan.bridge for plan in plans})
+
+    def test_generic_cross_queries_keep_original_topic(self):
+        plans = build_search_plans("嘉豪", 100)
+        self.assertTrue(all("嘉豪" in plan.query for plan in plans[1:]))
+
     def test_search_has_stable_fallback(self):
         with patch("server.searxng_search", side_effect=OSError("offline")):
             payload = search("代码优化", 60, 6)
@@ -100,6 +116,12 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(payload["mode"], "fallback")
         self.assertEqual(payload["results"], [])
 
+    def test_electricity_does_not_use_code_curated_fallback(self):
+        with patch("server.searxng_search", return_value=[]):
+            payload = search("电", 100, 10)
+        titles = [result["title"] for result in payload["results"]]
+        self.assertFalse(any("MDN" in title or "web.dev" in title for title in titles))
+
     def test_searxng_prioritizes_exact_title_and_limits_same_source(self):
         response = {
             "results": [
@@ -114,6 +136,30 @@ class SearchPlanTests(unittest.TestCase):
             results = searxng_search(plan, 4)
         self.assertEqual(results[0].title, "代码优化完整指南")
         self.assertLessEqual(sum(result.source == "docs.example.com" for result in results), 2)
+
+    def test_searxng_filters_results_without_query_connection(self):
+        response = {
+            "results": [
+                {"title": "AFL Season Ladder", "url": "https://sport.example/a", "content": "Australian football standings"},
+                {"title": "全球海底电缆地图", "url": "https://map.example/cable", "content": "海底通信基础设施维修"},
+            ]
+        }
+        plan = SearchPlan("跨域方向", "海底电缆 维修", "隐形基础设施", "连接电与通信。", 72)
+        with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)):
+            results = searxng_search(plan, 3)
+        self.assertEqual([result.title for result in results], ["全球海底电缆地图"])
+
+    def test_cross_domain_result_must_match_two_planned_concepts(self):
+        response = {
+            "results": [
+                {"title": "电报新手注册与进群", "url": "https://chat.example/", "content": "即时通信软件教程"},
+                {"title": "有线电报与莫尔斯电码", "url": "https://history.example/", "content": "电信史上的早期电气通信"},
+            ]
+        }
+        plan = SearchPlan("跨域方向", "有线电报 莫尔斯 电信史", "通信史", "电改变通信距离。", 82)
+        with patch("server.urllib.request.urlopen", return_value=fake_json_response(response)):
+            results = searxng_search(plan, 3)
+        self.assertEqual([result.title for result in results], ["有线电报与莫尔斯电码"])
 
     def test_search_reports_searxng_mode(self):
         def live_result(plan, _limit):
