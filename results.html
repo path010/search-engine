@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>代码优化 - 拓界搜索</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #ffffff;
+      --surface-soft: #f7f8fb;
+      --ink: #202124;
+      --muted: #68717d;
+      --line: #e3e6eb;
+      --blue: #1155cc;
+      --blue-soft: #eef4ff;
+      --green: #16764b;
+      --orange: #b85f1b;
+      --shadow: 0 3px 10px rgba(30, 50, 85, .12);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body { background: var(--page); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif; font-size: 15px; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; }
+    .topbar { border-bottom: 1px solid var(--line); padding: 20px 42px 0; }
+    .search-row { align-items: center; display: flex; gap: 22px; }
+    .brand { align-items: center; color: var(--blue); display: flex; flex: 0 0 auto; font-size: 23px; font-weight: 700; gap: 8px; text-decoration: none; }
+    .brand-mark { align-items: center; background: var(--blue); border-radius: 9px; color: #fff; display: inline-flex; height: 31px; justify-content: center; width: 31px; }
+    .search-form { align-items: center; border: 1px solid #d9dde5; border-radius: 26px; box-shadow: var(--shadow); display: flex; max-width: 820px; padding: 4px 7px 4px 17px; width: 100%; }
+    .search-form input { border: 0; color: var(--ink); flex: 1; min-width: 0; outline: none; padding: 10px 0; }
+    .search-form button { align-items: center; background: var(--blue); border: 0; border-radius: 22px; color: #fff; display: inline-flex; height: 39px; justify-content: center; width: 49px; }
+    .search-form button:hover { filter: brightness(1.08); }
+    .account { align-items: center; display: flex; gap: 11px; margin-left: auto; }
+    .account span { color: var(--muted); font-size: 12px; }
+    .avatar { align-items: center; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 50%; display: inline-flex; height: 34px; justify-content: center; width: 34px; }
+    .tabs { display: flex; gap: 30px; margin-left: 69px; margin-top: 13px; }
+    .tab { border-bottom: 3px solid transparent; color: var(--muted); font-size: 12px; padding: 9px 0 12px; }
+    .tab.active { border-bottom-color: var(--blue); color: var(--ink); font-weight: 600; }
+    .page-layout { display: grid; gap: 70px; grid-template-columns: minmax(0, 820px) minmax(270px, 410px); padding: 29px 52px 60px 196px; }
+    .result-count { color: var(--muted); font-size: 12px; margin-bottom: 25px; }
+    .result { margin-bottom: 31px; max-width: 790px; }
+    .source { align-items: center; display: flex; gap: 9px; margin-bottom: 4px; }
+    .source-icon { align-items: center; background: var(--blue-soft); border: 1px solid #dae6fb; border-radius: 50%; color: var(--blue); display: inline-flex; flex: 0 0 28px; font-size: 11px; height: 28px; justify-content: center; }
+    .source-name { font-size: 12px; }
+    .source-url { color: var(--green); font-size: 11px; margin-top: 1px; }
+    .result h2 { font-size: 20px; font-weight: 500; line-height: 1.25; margin: 3px 0 6px; }
+    .result h2 a { color: var(--blue); text-decoration: none; }
+    .result h2 a:hover { text-decoration: underline; }
+    .snippet { color: #535d6a; font-size: 13px; line-height: 1.58; margin: 0; }
+    .reason { border-left: 2px solid var(--orange); color: #3c4653; font-size: 12px; margin: 9px 0 10px; padding-left: 9px; }
+    .rating { align-items: center; display: flex; flex-wrap: wrap; gap: 7px; }
+    .rating-label { color: var(--muted); font-size: 11px; }
+    .rating button { background: #fff; border: 1px solid #ccd3de; border-radius: 15px; color: #455161; font-size: 11px; padding: 5px 10px; }
+    .rating button:hover { border-color: var(--blue); color: var(--blue); }
+    .rating button.selected { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+    .side { padding-top: 45px; }
+    .side h2 { font-size: 21px; font-weight: 500; margin: 0 0 7px; }
+    .side-intro { color: var(--muted); font-size: 12px; margin: 0 0 17px; }
+    .detour { align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 28px; display: flex; gap: 11px; margin-bottom: 10px; padding: 13px 17px; width: 100%; }
+    .detour:hover { border-color: var(--blue); box-shadow: 0 3px 10px rgba(17, 85, 204, .08); }
+    .detour-icon { color: var(--muted); font-size: 18px; }
+    .detour strong { font-size: 13px; font-weight: 600; text-align: left; }
+    .feedback-status { color: var(--green); font-size: 11px; min-height: 18px; margin-top: 12px; }
+    .pager { align-items: center; display: flex; gap: 7px; margin-top: 30px; }
+    .pager button { background: #fff; border: 1px solid var(--line); border-radius: 8px; color: var(--blue); height: 34px; min-width: 34px; }
+    .pager button.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    @media (max-width: 1120px) {
+      .page-layout { gap: 38px; padding-left: 72px; }
+    }
+    @media (max-width: 850px) {
+      .topbar { padding-left: 20px; padding-right: 20px; }
+      .account { display: none; }
+      .brand { font-size: 0; gap: 0; }
+      .tabs { margin-left: 53px; overflow: hidden; }
+      .page-layout { grid-template-columns: 1fr; padding: 24px 24px 50px; }
+      .side { border-top: 1px solid var(--line); padding-top: 25px; }
+    }
+    @media (max-width: 520px) {
+      .search-row { gap: 9px; }
+      .topbar { padding-left: 12px; padding-right: 12px; }
+      .tabs { gap: 17px; margin-left: 0; }
+      .tab:nth-last-child(-n+2) { display: none; }
+      .page-layout { padding: 21px 16px 44px; }
+      .result h2 { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="search-row">
+      <a class="brand" href="index.html"><span class="brand-mark">✦</span><span>拓界搜索</span></a>
+      <form class="search-form" id="resultsSearchForm">
+        <input id="resultsQuery" aria-label="搜索内容" value="代码优化" autocomplete="off">
+        <button type="submit" aria-label="搜索">⌕</button>
+      </form>
+      <div class="account"><span id="divergenceBadge">偏离度 60</span><span class="avatar">○</span></div>
+    </div>
+    <nav class="tabs" aria-label="搜索分类">
+      <span class="tab active">全部</span><span class="tab">图片</span><span class="tab">视频</span><span class="tab">地图</span><span class="tab">资讯</span><span class="tab">更多</span>
+    </nav>
+  </header>
+
+  <div class="page-layout">
+    <main>
+      <div class="result-count" id="resultCount">约 2,480,000 个结果 · 当前偏离度 60</div>
+
+      <section id="resultsList" aria-live="polite">
+        <p class="result-count">正在加载搜索结果…</p>
+      </section>
+
+      <div class="pager" aria-label="搜索结果分页"><button class="active" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">下一页</button></div>
+      <div class="feedback-status" id="feedbackStatus" role="status"></div>
+    </main>
+
+    <aside class="side">
+      <h2>跨域发现</h2>
+      <p class="side-intro">不提供相似搜索，换几个完全不同的方向。</p>
+      <div id="detourList">
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>海底电缆是怎么修的</strong></button>
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>中世纪修道院的时间表</strong></button>
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>候鸟如何辨认地球磁场</strong></button>
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>一座岛屿的邮票设计史</strong></button>
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>传统木船为什么不用钉子</strong></button>
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>为什么地图上的北方在上面</strong></button>
+      <button class="detour" type="button"><span class="detour-icon">⌕</span><strong>图书馆如何给气味分类</strong></button>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const query = document.getElementById('resultsQuery');
+    const count = document.getElementById('resultCount');
+    const status = document.getElementById('feedbackStatus');
+    const resultsList = document.getElementById('resultsList');
+    const detourList = document.getElementById('detourList');
+    const divergenceBadge = document.getElementById('divergenceBadge');
+    const initialParams = new URLSearchParams(window.location.search);
+    let currentDivergence = Math.max(0, Math.min(100, Number(initialParams.get('divergence') || 60)));
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    const sourceInitial = source => (source || 'W').slice(0, 1).toUpperCase();
+
+    function resultMarkup(result, index) {
+      return `
+        <article class="result" data-result-index="${index}">
+          <div class="source"><span class="source-icon">${escapeHtml(sourceInitial(result.source))}</span><div><div class="source-name">${escapeHtml(result.source)}</div><div class="source-url">${escapeHtml(result.display_url)}</div></div></div>
+          <h2><a href="${escapeHtml(result.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(result.title)}</a></h2>
+          <p class="snippet">${escapeHtml(result.snippet || '该网页暂无摘要。')}</p>
+          <div class="reason">推荐关联：${escapeHtml(result.reason)}</div>
+          <div class="rating"><span class="rating-label">这条结果：</span><button type="button" data-rating="太偏了">太偏了</button><button type="button" data-rating="满意">满意</button><button type="button" data-rating="不够偏">不够偏</button></div>
+        </article>`;
+    }
+
+    function bindRatings(searchQuery) {
+      document.querySelectorAll('[data-rating]').forEach(button => {
+        button.addEventListener('click', async () => {
+          const group = button.parentElement;
+          group.querySelectorAll('button').forEach(item => item.classList.remove('selected'));
+          button.classList.add('selected');
+          const article = button.closest('.result');
+          const payload = {
+            query: searchQuery,
+            divergence: currentDivergence,
+            rating: button.dataset.rating,
+            title: article.querySelector('h2')?.textContent || '',
+            url: article.querySelector('a')?.href || ''
+          };
+          status.textContent = `已记录评价：“${button.dataset.rating}”。`;
+          try {
+            await fetch('/api/feedback', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+          } catch (_) {
+            status.textContent = `评价已在页面生效，但本地服务未能保存。`;
+          }
+        });
+      });
+    }
+
+    function bindDetours() {
+      document.querySelectorAll('.detour').forEach(button => {
+        button.addEventListener('click', () => {
+          query.value = button.dataset.query || button.textContent.trim();
+          runSearch(query.value, currentDivergence);
+          window.scrollTo({top: 0, behavior: 'smooth'});
+        });
+      });
+    }
+
+    async function runSearch(value, divergence) {
+      const searchQuery = value.trim() || '新的问题';
+      currentDivergence = Math.max(0, Math.min(100, Number(divergence)));
+      query.value = searchQuery;
+      document.title = `${searchQuery} - 拓界搜索`;
+      divergenceBadge.textContent = `偏离度 ${currentDivergence}`;
+      count.textContent = `正在生成偏离度 ${currentDivergence} 的搜索结果…`;
+      status.textContent = '';
+      resultsList.setAttribute('aria-busy', 'true');
+      try {
+        const params = new URLSearchParams({q: searchQuery, divergence: currentDivergence, limit: 10});
+        const response = await fetch(`/api/search?${params.toString()}`);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '搜索失败');
+        resultsList.innerHTML = data.results.map(resultMarkup).join('');
+        detourList.innerHTML = data.detours.map(item => `<button class="detour" type="button" data-query="${escapeHtml(item.query)}"><span class="detour-icon">⌕</span><strong>${escapeHtml(item.query)}</strong></button>`).join('');
+        const sourceText = data.mode === 'searxng' ? 'SearXNG 实时网页' : data.mode === 'mixed' ? 'SearXNG 实时网页 + 精选补充' : '精选网址降级';
+        count.textContent = `${data.results.length} 条结果 · 偏离度 ${data.divergence} · ${sourceText}`;
+        const nextUrl = new URL(window.location.href);
+        nextUrl.search = new URLSearchParams({q: searchQuery, divergence: currentDivergence}).toString();
+        history.replaceState(null, '', nextUrl);
+        bindRatings(searchQuery);
+        bindDetours();
+      } catch (error) {
+        count.textContent = '搜索服务暂时不可用';
+        status.textContent = error.message;
+      } finally {
+        resultsList.removeAttribute('aria-busy');
+      }
+    }
+
+    document.getElementById('resultsSearchForm').addEventListener('submit', event => {
+      event.preventDefault();
+      runSearch(query.value, currentDivergence);
+    });
+
+    const initialQuery = initialParams.get('q') || query.value;
+    runSearch(initialQuery, currentDivergence);
+  </script>
+</body>
+</html>

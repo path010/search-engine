@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>拓界搜索｜Beyond Search</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #eef2f7;
+      --surface: #ffffff;
+      --surface-glass: rgba(255,255,255,.82);
+      --ink: #172033;
+      --muted: #68768b;
+      --line: #dce4ef;
+      --blue: #2169df;
+      --blue-soft: #eaf2ff;
+      --orange: #c36a24;
+      --green: #15774f;
+      --shadow: 0 20px 55px rgba(27, 47, 83, .16);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      background:
+        radial-gradient(circle at 12% 8%, rgba(79, 129, 235, .23), transparent 32%),
+        radial-gradient(circle at 86% 4%, rgba(240, 176, 111, .18), transparent 25%),
+        linear-gradient(135deg, #f4f6fb 0%, #e9eff7 100%);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    .browser-shell { margin: 18px auto; max-width: 1440px; overflow: hidden; background: var(--surface-glass); border: 1px solid rgba(255,255,255,.62); border-radius: 24px; box-shadow: var(--shadow); }
+    .browser-bar { align-items: center; display: flex; gap: 10px; padding: 10px 16px; background: rgba(237, 240, 246, .92); border-bottom: 1px solid rgba(206, 216, 231, .85); }
+    .browser-icon { color: #6e7a8e; font-size: 20px; line-height: 1; }
+    .address-bar { align-items: center; background: rgba(255,255,255,.83); border: 1px solid #d9e0eb; border-radius: 18px; color: #748198; display: flex; flex: 1; gap: 8px; min-width: 0; padding: 7px 13px; }
+    .address-bar span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .page { padding: 0 34px 34px; }
+    .top-nav { align-items: center; display: flex; justify-content: space-between; padding: 18px 0 12px; }
+    .brand { align-items: center; display: flex; gap: 10px; }
+    .brand-mark { align-items: center; background: var(--blue); border-radius: 11px; color: #fff; display: inline-flex; font-size: 18px; height: 34px; justify-content: center; width: 34px; }
+    .brand strong { font-size: 16px; }
+    .brand small { color: var(--muted); font-size: 11px; margin-left: 5px; }
+    .nav-actions { align-items: center; display: flex; gap: 8px; }
+    .nav-actions button, .outline-button { background: rgba(255,255,255,.54); border: 1px solid var(--line); border-radius: 9px; color: var(--ink); padding: 8px 11px; }
+    .nav-actions button:hover, .outline-button:hover { border-color: var(--blue); color: var(--blue); }
+    .hero { margin: 44px auto 0; max-width: 1080px; }
+    .hero-meta { color: var(--muted); font-size: 12px; letter-spacing: .02em; text-align: center; }
+    h1 { font-size: clamp(32px, 5vw, 54px); font-weight: 500; letter-spacing: -.055em; line-height: 1; margin: 10px 0 23px; text-align: center; }
+    .search-wrap { background: var(--surface); border: 1px solid #d6dfec; border-radius: 29px; box-shadow: 0 12px 28px rgba(29, 54, 99, .13); display: flex; gap: 9px; padding: 6px 7px 6px 18px; }
+    .search-wrap input { background: transparent; border: 0; color: var(--ink); flex: 1; min-width: 0; outline: none; padding: 12px 0; }
+    .search-wrap button { background: var(--blue); border: 1px solid var(--blue); border-radius: 22px; color: #fff; font-weight: 700; padding: 10px 20px; }
+    .search-wrap button:hover { filter: brightness(1.07); }
+    .divergence-panel { background: #ffffff; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); margin-top: 12px; padding: 14px 16px 11px; box-shadow: 0 6px 18px rgba(29, 54, 99, .06); }
+    .divergence-head { align-items: baseline; display: flex; justify-content: space-between; }
+    .divergence-head strong { font-size: 13px; }
+    .divergence-head span { color: var(--blue); font-size: 14px; font-weight: 700; }
+    .divergence-panel input[type="range"] { accent-color: var(--blue); display: block; margin: 10px 0 1px; width: 100%; }
+    .range-labels { color: var(--muted); display: flex; font-size: 11px; justify-content: space-between; }
+    .suggestion { align-items: center; color: var(--muted); display: flex; font-size: 11px; gap: 10px; justify-content: space-between; margin-top: 9px; }
+    .suggestion button { background: transparent; border: 1px solid var(--line); border-radius: 8px; color: var(--blue); font-size: 11px; padding: 5px 8px; }
+    .suggestion button:hover { border-color: var(--blue); }
+    .section-head { align-items: baseline; display: flex; justify-content: space-between; margin: 30px 0 11px; }
+    .section-head h2 { font-size: 16px; font-weight: 500; margin: 0; }
+    .section-head span { color: var(--muted); font-size: 11px; }
+    .shortcut-grid { display: grid; gap: 9px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .shortcut { align-items: center; background: rgba(255,255,255,.68); border: 1px solid rgba(213, 222, 235, .92); border-radius: 13px; display: flex; gap: 8px; min-width: 0; padding: 10px; transition: transform .16s ease, box-shadow .16s ease; }
+    .shortcut:hover { box-shadow: 0 8px 18px rgba(28, 55, 101, .11); transform: translateY(-2px); }
+    .shortcut-icon { align-items: center; background: var(--blue-soft); border-radius: 9px; color: var(--blue); display: flex; flex: 0 0 30px; height: 30px; justify-content: center; }
+    .shortcut div { min-width: 0; }
+    .shortcut strong, .shortcut span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .shortcut strong { font-size: 10.5px; }
+    .shortcut span { color: var(--muted); font-size: 9px; margin-top: 2px; }
+    .feed-tabs { display: flex; gap: 20px; }
+    .feed-tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font-size: 12px; padding: 0 0 7px; }
+    .feed-tabs button.active { border-bottom-color: var(--blue); color: var(--ink); }
+    .feed-grid { display: grid; gap: 11px; grid-template-columns: 1.45fr .8fr .8fr; }
+    .feed-feature, .feed-card { border: 1px solid var(--line); border-radius: 15px; min-height: 176px; overflow: hidden; position: relative; }
+    .feed-feature { background: linear-gradient(135deg, #152d5c 0%, #315fa2 50%, #b56f43 125%); color: #f9fbff; padding: 18px; }
+    .feed-feature::after { color: rgba(255,255,255,.18); content: "✦"; font-size: 112px; line-height: 1; position: absolute; right: 16px; top: 8px; }
+    .feed-feature small, .feed-card small { font-size: 10px; }
+    .feed-feature small { color: #cfdef9; }
+    .feed-feature strong { display: block; font-size: 20px; line-height: 1.2; margin-top: 27px; max-width: 330px; position: relative; z-index: 1; }
+    .feed-feature span { bottom: 15px; color: #d8e5f8; font-size: 11px; left: 18px; position: absolute; }
+    .feed-card { background: rgba(255,255,255,.8); padding: 15px; }
+    .feed-card small { color: var(--orange); }
+    .feed-card strong { display: block; font-size: 15px; line-height: 1.25; margin-top: 11px; }
+    .feed-card p { color: var(--muted); font-size: 11px; margin: 9px 0 0; }
+    .feed-card button { background: transparent; border: 0; bottom: 13px; color: var(--blue); font-size: 10px; left: 13px; padding: 0; position: absolute; }
+    .feed-card button:hover { text-decoration: underline; }
+    .status { color: var(--green); font-size: 11px; min-height: 18px; margin-top: 10px; }
+    @media (max-width: 900px) {
+      .shortcut-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .feed-grid { grid-template-columns: 1fr 1fr; }
+      .feed-feature { grid-column: 1 / -1; }
+    }
+    @media (max-width: 600px) {
+      .browser-shell { border-radius: 0; margin: 0; }
+      .page { padding: 0 16px 26px; }
+      .hero { margin-top: 42px; }
+      .top-nav { padding-top: 14px; }
+      .nav-actions { display: none; }
+      .search-wrap { align-items: stretch; border-radius: 16px; flex-direction: column; padding: 9px; }
+      .search-wrap button { border-radius: 10px; width: 100%; }
+      .shortcut-grid, .feed-grid { grid-template-columns: 1fr; }
+      .feed-feature { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="browser-shell">
+    <div class="browser-bar">
+      <span class="browser-icon">‹</span><span class="browser-icon">↻</span>
+      <div class="address-bar"><span>⌕</span><span>搜索或输入 Web 地址</span></div>
+      <span class="browser-icon">☆</span><span class="browser-icon">•••</span>
+    </div>
+
+    <main class="page">
+      <nav class="top-nav">
+        <div class="brand"><span class="brand-mark">✦</span><div><strong>拓界搜索</strong><small>Beyond Search</small></div></div>
+        <div class="nav-actions"><button type="button">页面布局</button><button type="button">个性化设置</button></div>
+      </nav>
+
+      <section class="hero">
+        <div class="hero-meta">2026 年 8 月 20 日 · 星期四</div>
+        <h1>从一个问题，抵达更多可能。</h1>
+        <form class="search-wrap" id="homeSearchForm">
+          <input id="homeQuery" aria-label="搜索内容" value="代码优化" autocomplete="off">
+          <button type="submit">搜索</button>
+        </form>
+        <div class="divergence-panel">
+          <div class="divergence-head"><strong>偏离度</strong><span id="divergenceValue">60 · 跨域探索</span></div>
+          <input id="divergenceRange" type="range" min="0" max="100" value="60" aria-label="偏离度">
+          <div class="range-labels"><span>相关拓展</span><span>跨域探索</span></div>
+        </div>
+        <div class="status" id="homeStatus" role="status"></div>
+
+        <div class="section-head"><h2>小众但值得去的网站</h2></div>
+        <section class="shortcut-grid" aria-label="小众网址">
+          <div class="shortcut"><span class="shortcut-icon">⌁</span><div><strong>Internet Archive</strong><span>数字档案馆</span></div></div>
+          <div class="shortcut"><span class="shortcut-icon">◫</span><div><strong>Project Gutenberg</strong><span>公共领域电子书</span></div></div>
+          <div class="shortcut"><span class="shortcut-icon">◇</span><div><strong>Public Domain Review</strong><span>历史与视觉文化</span></div></div>
+          <div class="shortcut"><span class="shortcut-icon">⌘</span><div><strong>Marginalia Search</strong><span>独立网络搜索</span></div></div>
+          <div class="shortcut"><span class="shortcut-icon">↗</span><div><strong>Openverse</strong><span>开放版权素材</span></div></div>
+          <div class="shortcut"><span class="shortcut-icon">＋</span><div><strong>添加网址</strong><span>自定义入口</span></div></div>
+        </section>
+
+        <div class="section-head"><div class="feed-tabs"><button class="active" type="button">发现</button><button type="button">猜你不喜欢</button><button type="button">近期探索</button></div></div>
+        <section class="feed-grid" aria-label="首页发现内容">
+          <article class="feed-feature"><small>今日意外 · 数字档案</small><strong>一张地图，如何改变人们理解一座城市的方式？</strong><span>从熟悉的搜索，绕到陌生的观察。</span></article>
+          <article class="feed-card"><small>猜你不喜欢 · 冷门手艺</small><strong>一本古老的修复钟表指南</strong><p>和你的专业无关，但它重新解释了误差、耐心与结构。</p><button type="button" class="dislike-button">打开岔路 →</button></article>
+          <article class="feed-card"><small>猜你不喜欢 · 自然观察</small><strong>如何记录一棵树一整年</strong><p>一个极慢的观察计划，和信息流的速度恰好相反。</p><button type="button" class="dislike-button">打开岔路 →</button></article>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script>
+    const range = document.getElementById('divergenceRange');
+    const rangeValue = document.getElementById('divergenceValue');
+    const query = document.getElementById('homeQuery');
+    const status = document.getElementById('homeStatus');
+    const label = value => value < 30 ? `${value} · 相关拓展` : value < 70 ? `${value} · 跨域探索` : `${value} · 开放探索`;
+    range.addEventListener('input', () => { rangeValue.textContent = label(Number(range.value)); });
+    document.getElementById('homeSearchForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const value = query.value.trim() || '新的问题';
+      status.textContent = `正在搜索“${value}”…`;
+      const params = new URLSearchParams({q: value, divergence: range.value});
+      window.location.href = `results.html?${params.toString()}`;
+    });
+    document.querySelectorAll('.dislike-button').forEach(button => {
+      button.addEventListener('click', () => { status.textContent = '已打开一条猜你不喜欢的岔路。'; });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,435 @@
+"""拓界搜索 MVP：零第三方依赖的本地 Web 服务。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import asdict, dataclass
+from http import HTTPStatus
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from typing import Any
+
+
+ROOT = Path(__file__).resolve().parent
+HOST = "127.0.0.1"
+PORT = 8787
+USER_AGENT = "Mozilla/5.0 (compatible; BeyondSearchMVP/0.1)"
+DEFAULT_SEARXNG_URL = "http://127.0.0.1:8080"
+SEARXNG_URL = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL).strip().rstrip("/")
+SEARXNG_LANGUAGE = os.getenv("SEARXNG_LANGUAGE", "zh-CN").strip() or "zh-CN"
+
+
+@dataclass(frozen=True)
+class SearchPlan:
+    label: str
+    query: str
+    bridge: str
+    reason: str
+    distance: int
+
+
+@dataclass
+class SearchResult:
+    title: str
+    url: str
+    snippet: str
+    source: str
+    display_url: str
+    bridge: str
+    reason: str
+    distance: int
+
+
+TOPIC_PROFILES: list[dict[str, Any]] = [
+    {
+        "keywords": ("代码", "编程", "软件", "程序", "开发", "算法", "性能", "debug", "coding"),
+        "adjacent": [
+            ("软件架构中的复杂度控制", "复杂度控制", "从局部优化扩展到系统结构与长期维护。"),
+            ("认知负荷 工具设计", "认知负荷", "代码复杂度最终会转化为人的理解成本。"),
+            ("排队论 系统吞吐 瓶颈", "瓶颈与吞吐", "程序和排队系统都关心等待、拥堵与资源分配。"),
+        ],
+        "cross": [
+            ("极简主义 少即是多 设计", "删减与留白", "代码优化和极简主义都在研究怎样留下真正重要的东西。"),
+            ("园林设计 留白 路径 边界", "空间与边界", "好的系统不只靠增加功能，也靠给变化留下空间。"),
+            ("城市慢行系统 减少拥堵", "复杂网络", "代码、道路和组织流程都可以通过减少拥堵提升整体效率。"),
+            ("钟表修复 机械诊断", "修复思维", "维护旧机器和维护旧代码，都需要先理解历史再决定改动边界。"),
+        ],
+    },
+    {
+        "keywords": ("学习", "考试", "复习", "课程", "教育", "知识", "论文", "study"),
+        "adjacent": [
+            ("间隔重复 学习科学", "记忆规律", "从学习内容扩展到记忆形成和遗忘规律。"),
+            ("知识地图 概念关系", "知识结构", "学习不只是记住信息，也是在概念间建立路径。"),
+            ("注意力恢复 认知科学", "注意力", "学习效率与大脑如何恢复注意力密切相关。"),
+        ],
+        "cross": [
+            ("中世纪修道院 时间表", "节律与专注", "古老时间制度也在处理专注、休息和长期坚持。"),
+            ("博物馆策展 如何组织知识", "策展思维", "策展与学习都需要选择、排列和解释材料。"),
+            ("候鸟导航 地球磁场", "陌生认知系统", "观察其他生物如何定位，有助于跳出熟悉的学习模型。"),
+            ("树木物候观察 日记", "慢观察", "长期观察能提供不同于短期记忆训练的知识积累方式。"),
+        ],
+    },
+    {
+        "keywords": ("工作", "效率", "团队", "管理", "项目", "会议", "职场", "productivity"),
+        "adjacent": [
+            ("组织行为 团队协作", "组织行为", "从工具效率扩展到团队互动和行为结构。"),
+            ("排队论 工作流 瓶颈", "流程瓶颈", "工作流和服务系统都需要处理等待与拥堵。"),
+            ("心理安全 团队", "心理安全", "团队效率不仅由流程决定，也由表达风险决定。"),
+        ],
+        "cross": [
+            ("管弦乐团 排练 协作", "排练机制", "乐团展示了复杂团队如何依靠共同节奏协作。"),
+            ("传统木船 建造 分工", "手工协作", "传统工程的协作方式提供了不同于现代项目管理的视角。"),
+            ("蜂群 决策 机制", "分布式决策", "蜂群如何形成集体选择，是观察团队决策的另一条路径。"),
+            ("城市交通 信号 调度", "调度与反馈", "团队任务和城市交通都依赖实时反馈与动态调度。"),
+        ],
+    },
+]
+
+
+GENERIC_PROFILE = {
+    "adjacent": [
+        ("{q} 历史 演变", "时间维度", "从当下问题扩展到它如何形成和变化。"),
+        ("{q} 设计 原理", "设计原理", "换一个设计视角重新理解这个问题。"),
+        ("{q} 社会影响", "社会联系", "观察这个问题如何进入更大的社会结构。"),
+    ],
+    "cross": [
+        ("公共领域 数字档案", "数字档案", "从即时答案转向长期保存的历史材料。"),
+        ("传统手工艺 修复 方法", "修复思维", "修复实践能提供关于耐心、边界和误差的另一种理解。"),
+        ("自然观察 物候 日记", "慢观察", "自然观察提供一种与快速获取信息相反的认知节奏。"),
+        ("地图 制图史 视觉文化", "空间表达", "地图展示了知识如何通过空间结构被重新组织。"),
+        ("海底电缆 维修", "隐形基础设施", "看不见的基础设施常能揭示系统真正依赖的结构。"),
+    ],
+}
+
+
+CURATED_LIBRARY: dict[str, list[dict[str, str]]] = {
+    "原始问题": [
+        {"title": "MDN Web Docs：Web 开发技术文档", "url": "https://developer.mozilla.org/zh-CN/", "snippet": "面向 Web 开发者的开放技术文档，包含性能、JavaScript、CSS、网络与浏览器 API。"},
+        {"title": "web.dev：构建快速、易用的现代网站", "url": "https://web.dev/", "snippet": "提供 Web 性能、可访问性、用户体验和工程实践指南。"},
+        {"title": "Martin Fowler：软件设计与重构文章", "url": "https://martinfowler.com/", "snippet": "关于软件架构、重构、持续交付和长期维护的经典文章集合。"},
+        {"title": "Computer Science from the Bottom Up", "url": "https://bottomupcs.com/", "snippet": "从计算机底层原理出发理解程序、操作系统、编译与性能。"},
+    ],
+    "复杂度控制": [
+        {"title": "Software Engineering at Google：工程规模与复杂度", "url": "https://abseil.io/resources/swe-book", "snippet": "讨论软件如何跨越时间与规模持续演化，以及团队如何控制工程复杂度。"},
+        {"title": "Refactoring.Guru：重构与设计模式", "url": "https://refactoring.guru/", "snippet": "通过图解学习重构、设计模式和代码结构改善方法。"},
+        {"title": "The Architecture of Open Source Applications", "url": "https://aosabook.org/", "snippet": "由开源项目作者解释真实软件系统背后的架构选择。"},
+    ],
+    "认知负荷": [
+        {"title": "Nielsen Norman Group：认知负荷与界面设计", "url": "https://www.nngroup.com/articles/minimize-cognitive-load/", "snippet": "解释复杂界面如何增加人的理解负担，以及如何减少不必要的认知成本。"},
+        {"title": "The Design of Everyday Things：日常事物的设计", "url": "https://www.nngroup.com/books/design-everyday-things-revised/", "snippet": "从可理解性、反馈和错误预防重新认识产品与工具设计。"},
+        {"title": "Laws of UX：心理学规律与交互设计", "url": "https://lawsofux.com/", "snippet": "用简洁案例说明心理学规律如何影响用户理解复杂系统。"},
+    ],
+    "瓶颈与吞吐": [
+        {"title": "Seeing Theory：可视化概率与统计", "url": "https://seeing-theory.brown.edu/", "snippet": "通过交互图形理解概率、随机过程与统计推断。"},
+        {"title": "Queueing Theory：排队系统的直观介绍", "url": "https://people.revoledu.com/kardi/tutorial/Queuing/", "snippet": "从到达率、服务率和等待时间理解系统瓶颈与吞吐。"},
+        {"title": "High Scalability：大型系统案例", "url": "http://highscalability.com/", "snippet": "通过真实互联网系统案例观察规模、瓶颈、缓存与可靠性。"},
+    ],
+    "删减与留白": [
+        {"title": "Minimalissimo：极简主义设计档案", "url": "https://minimalissimo.com/", "snippet": "从建筑、产品、平面与空间设计观察删减、克制和必要性。"},
+        {"title": "LessWrong：关于简洁解释与思维模型的文章", "url": "https://www.lesswrong.com/", "snippet": "探索理性思考、模型简化和复杂问题中的认知偏差。"},
+        {"title": "The Minimalists：关于减少与选择的文章", "url": "https://www.theminimalists.com/", "snippet": "从生活哲学角度讨论减少冗余、明确优先级与保留重要事物。"},
+    ],
+    "空间与边界": [
+        {"title": "Japanese Gardening：日本庭园的空间原则", "url": "https://www.japanesegardening.org/", "snippet": "从路径、借景、留白和边界理解空间如何引导人的注意力。"},
+        {"title": "ArchDaily：庭院与景观设计案例", "url": "https://www.archdaily.com/search/projects/categories/landscape-architecture", "snippet": "浏览世界各地景观项目，观察空间、动线与环境之间的关系。"},
+        {"title": "Landscape Performance Series", "url": "https://www.landscapeperformance.org/", "snippet": "用案例和数据研究景观设计如何影响环境、社会和空间使用。"},
+    ],
+    "复杂网络": [
+        {"title": "Streetmix：交互式街道设计工具", "url": "https://streetmix.net/", "snippet": "重新组合道路、步行、骑行和公共交通空间，直观观察复杂系统的取舍。"},
+        {"title": "MIT Senseable City Lab：城市数据与流动", "url": "https://senseable.mit.edu/", "snippet": "以数据和实验探索城市交通、公共空间与技术系统。"},
+        {"title": "NACTO：城市街道设计指南", "url": "https://nacto.org/publication/urban-street-design-guide/", "snippet": "研究城市如何通过重新分配路径与空间改善安全和流动。"},
+    ],
+    "修复思维": [
+        {"title": "iFixit：开放维修指南", "url": "https://www.ifixit.com/Guide", "snippet": "数千份设备拆解和维修指南，展示诊断、拆分与恢复功能的过程。"},
+        {"title": "The Repair Association：维修权与可修复设计", "url": "https://www.repair.org/", "snippet": "从产品、政策和可持续性角度讨论为什么系统应该允许被理解和修复。"},
+        {"title": "Horology：钟表结构与修复资料", "url": "https://www.horology.org/", "snippet": "了解机械钟表、计时结构和精密维修背后的知识。"},
+    ],
+    "数字档案": [
+        {"title": "Internet Archive：互联网与公共文化的数字档案馆", "url": "https://archive.org/", "snippet": "浏览网页、书籍、录音、电影与软件等公共数字馆藏。"},
+        {"title": "The Public Domain Review：公共领域中的奇异历史", "url": "https://publicdomainreview.org/", "snippet": "以专题文章和图像收藏重新发现艺术、科学与思想史中的冷门材料。"},
+        {"title": "Smithsonian Open Access：开放博物馆藏品", "url": "https://www.si.edu/openaccess", "snippet": "访问史密森尼开放的博物馆和研究藏品数据。"},
+    ],
+    "时间维度": [
+        {"title": "Google Arts & Culture：历史与文化专题", "url": "https://artsandculture.google.com/", "snippet": "通过档案、艺术品和时间线理解事物如何形成和演变。"},
+        {"title": "Our World in Data：长期数据变化", "url": "https://ourworldindata.org/", "snippet": "使用公开数据观察技术、社会与环境问题的长期变化。"},
+    ],
+    "设计原理": [
+        {"title": "Design Principles FTW", "url": "https://www.designprinciplesftw.com/", "snippet": "收集不同组织与设计师使用的产品设计原则。"},
+        {"title": "Designing for the Web：开放设计书", "url": "https://designingfortheweb.co.uk/", "snippet": "从排版、网格与视觉层级理解 Web 设计基础。"},
+    ],
+    "社会联系": [
+        {"title": "Pew Research Center：互联网与社会研究", "url": "https://www.pewresearch.org/internet/", "snippet": "研究技术、媒体与社会行为之间的联系。"},
+        {"title": "Data & Society：技术的社会影响", "url": "https://datasociety.net/", "snippet": "探索自动化、平台、数据和人工智能如何进入社会结构。"},
+    ],
+    "慢观察": [
+        {"title": "iNaturalist：记录和辨认自然观察", "url": "https://www.inaturalist.org/", "snippet": "记录身边生物并参与全球自然观察社区。"},
+        {"title": "Nature's Notebook：物候观察计划", "url": "https://www.usanpn.org/nn", "snippet": "通过长期记录植物和动物的季节变化理解自然节律。"},
+    ],
+    "空间表达": [
+        {"title": "David Rumsey Map Collection：历史地图档案", "url": "https://www.davidrumsey.com/", "snippet": "浏览数万幅历史地图，观察世界如何被测量、组织和表达。"},
+        {"title": "The Map Room：地图与制图文化", "url": "https://www.maproomblog.com/", "snippet": "收集地图、制图技术和空间表达相关的文章与项目。"},
+    ],
+    "隐形基础设施": [
+        {"title": "Submarine Cable Map：全球海底电缆地图", "url": "https://www.submarinecablemap.com/", "snippet": "可视化连接全球互联网的海底光缆与登陆点。"},
+        {"title": "The Internet's Undersea World", "url": "https://99percentinvisible.org/episode/episode-70-the-great-undersea-cable/", "snippet": "从设计与历史角度理解隐藏在海底的通信基础设施。"},
+    ],
+}
+
+
+DEFAULT_CURATED = [item for group in CURATED_LIBRARY.values() for item in group]
+
+
+def clean_text(value: str) -> str:
+    value = re.sub(r"<[^>]+>", " ", value or "")
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def host_label(url: str) -> tuple[str, str]:
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.netloc.removeprefix("www.") or "网页"
+    display = host + (parsed.path.rstrip("/") if parsed.path not in ("", "/") else "")
+    return host, display.replace("/", " › ")
+
+
+def profile_for(query: str) -> dict[str, Any]:
+    lowered = query.lower()
+    for profile in TOPIC_PROFILES:
+        if any(keyword in lowered for keyword in profile["keywords"]):
+            return profile
+    return {
+        "adjacent": [(q.format(q=query), bridge, reason) for q, bridge, reason in GENERIC_PROFILE["adjacent"]],
+        "cross": GENERIC_PROFILE["cross"],
+    }
+
+
+def build_search_plans(query: str, divergence: int) -> list[SearchPlan]:
+    profile = profile_for(query)
+    seed = int(hashlib.sha256(f"{query}:{divergence}".encode("utf-8")).hexdigest()[:12], 16)
+
+    def rotate(items: list[tuple[str, str, str]]) -> list[tuple[str, str, str]]:
+        if not items:
+            return []
+        offset = seed % len(items)
+        return items[offset:] + items[:offset]
+
+    adjacent = rotate(list(profile["adjacent"]))
+    cross = rotate(list(profile["cross"]))
+    plans = [SearchPlan("原主题", query, "原始问题", "保留与输入直接相关的高质量结果，避免搜索完全失焦。", 0)]
+
+    if divergence <= 25:
+        mix = [(adjacent[0], 24), (adjacent[1], 32)]
+    elif divergence <= 55:
+        mix = [(adjacent[0], 35), (adjacent[1], 43), (cross[0], 58)]
+    elif divergence <= 80:
+        mix = [(adjacent[0], 42), (cross[0], 62), (cross[1], 72), (cross[2], 80)]
+    else:
+        mix = [(cross[0], 72), (cross[1], 82), (cross[2], 90), (cross[3 % len(cross)], 96)]
+
+    for (search_query, bridge, reason), distance in mix:
+        plans.append(SearchPlan("跨域方向", search_query, bridge, reason, distance))
+    return plans
+
+
+def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
+    """Run one planned query against a SearXNG JSON endpoint."""
+    params = urllib.parse.urlencode(
+        {
+            "q": plan.query,
+            "format": "json",
+            "language": SEARXNG_LANGUAGE,
+            "safesearch": 1,
+            "categories": "general",
+        }
+    )
+    request = urllib.request.Request(
+        f"{SEARXNG_URL}/search?{params}",
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=6.0) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+
+    items = payload.get("results")
+    if not isinstance(items, list):
+        raise ValueError("SearXNG response does not contain a results list")
+
+    results: list[SearchResult] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = clean_text(str(item.get("title") or ""))
+        url = clean_text(str(item.get("url") or ""))
+        snippet = clean_text(str(item.get("content") or item.get("snippet") or ""))
+        if not title or not url or urllib.parse.urlparse(url).scheme not in {"http", "https"}:
+            continue
+        source, display_url = host_label(url)
+        results.append(SearchResult(title, url, snippet, source, display_url, plan.bridge, plan.reason, plan.distance))
+        if len(results) >= limit:
+            break
+    return results
+
+
+def fallback_results(plans: list[SearchPlan], limit: int) -> list[SearchResult]:
+    results: list[SearchResult] = []
+    if not plans:
+        return results
+
+    # Round-robin by plan so the requested divergence controls both the
+    # explanation and the returned websites, even when live search is offline.
+    cursors = [0 for _ in plans]
+    while len(results) < limit:
+        added = False
+        for plan_index, plan in enumerate(plans):
+            candidates = CURATED_LIBRARY.get(plan.bridge, DEFAULT_CURATED)
+            cursor = cursors[plan_index]
+            if cursor >= len(candidates):
+                continue
+            item = candidates[cursor]
+            cursors[plan_index] += 1
+            source, display_url = host_label(item["url"])
+            results.append(SearchResult(item["title"], item["url"], item["snippet"], source, display_url, plan.bridge, plan.reason, plan.distance))
+            added = True
+            if len(results) >= limit:
+                break
+        if not added:
+            break
+    return results
+
+
+def deduplicate(results: list[SearchResult], limit: int) -> list[SearchResult]:
+    seen: set[str] = set()
+    output: list[SearchResult] = []
+    for result in results:
+        normalized = urllib.parse.urlsplit(result.url)._replace(query="", fragment="").geturl().rstrip("/")
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        output.append(result)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
+    query = clean_text(query)[:160]
+    divergence = max(0, min(100, int(divergence)))
+    limit = max(3, min(16, int(limit)))
+    plans = build_search_plans(query, divergence)
+    raw: list[SearchResult] = []
+    searxng_available = True
+    per_plan = 2 if divergence > 30 else 3
+
+    for plan in plans:
+        try:
+            raw.extend(searxng_search(plan, per_plan))
+        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError):
+            searxng_available = False
+            break
+
+    results = deduplicate(raw, limit)
+    live_count = len(results)
+    if len(results) < limit:
+        results = deduplicate(results + fallback_results(plans, limit), limit)
+
+    if not live_count:
+        mode = "fallback"
+    elif len(results) > live_count:
+        mode = "mixed"
+    else:
+        mode = "searxng"
+
+    detours = [
+        {"query": plan.query, "bridge": plan.bridge, "distance": plan.distance}
+        for plan in plans[1:]
+    ]
+    return {
+        "query": query,
+        "divergence": divergence,
+        "mode": mode,
+        "search_backend": {
+            "name": "SearXNG",
+            "available": searxng_available and live_count > 0,
+        },
+        "generated_at": int(time.time()),
+        "plans": [asdict(plan) for plan in plans],
+        "detours": detours,
+        "results": [asdict(result) for result in results],
+    }
+
+
+class BeyondSearchHandler(SimpleHTTPRequestHandler):
+    server_version = "BeyondSearch/0.1"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, directory=str(ROOT), **kwargs)
+
+    def log_message(self, fmt: str, *args: Any) -> None:
+        print(f"[{self.log_date_time_string()}] {fmt % args}")
+
+    def send_json(self, payload: Any, status: int = HTTPStatus.OK) -> None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self) -> None:  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/api/health":
+            self.send_json({"status": "ok", "search_backend": "SearXNG", "searxng_url": SEARXNG_URL})
+            return
+        if parsed.path == "/api/search":
+            params = urllib.parse.parse_qs(parsed.query)
+            query = params.get("q", [""])[0].strip()
+            if not query:
+                self.send_json({"error": "请输入搜索内容"}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                divergence = int(params.get("divergence", ["50"])[0])
+                limit = int(params.get("limit", ["10"])[0])
+            except ValueError:
+                self.send_json({"error": "偏离度必须是 0–100 的整数"}, HTTPStatus.BAD_REQUEST)
+                return
+            self.send_json(search(query, divergence, limit))
+            return
+        super().do_GET()
+
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path != "/api/feedback":
+            self.send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, json.JSONDecodeError):
+            self.send_json({"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+            return
+        feedback_file = ROOT / "feedback.jsonl"
+        record = {"timestamp": int(time.time()), **payload}
+        with feedback_file.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        self.send_json({"ok": True})
+
+
+def main() -> None:
+    server = ThreadingHTTPServer((HOST, PORT), BeyondSearchHandler)
+    print(f"拓界搜索已启动：http://{HOST}:{PORT}/")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()

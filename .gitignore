@@ -1,0 +1,17 @@
+# Python runtime files
+__pycache__/
+*.py[cod]
+
+# Local environment and user data
+.env
+feedback.jsonl
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
