@@ -1,8 +1,9 @@
 import unittest
+import time
 from io import BytesIO
 from unittest.mock import patch
 
-from server import SearchPlan, build_search_plans, search, searxng_search
+from server import SEARCH_CACHE, SearchPlan, build_search_plans, search, searxng_search
 
 
 class FakeResponse:
@@ -24,6 +25,9 @@ def fake_json_response(payload):
 
 
 class SearchPlanTests(unittest.TestCase):
+    def setUp(self):
+        SEARCH_CACHE.clear()
+
     def test_low_divergence_keeps_adjacent_queries(self):
         plans = build_search_plans("代码优化", 20)
         self.assertEqual(plans[0].query, "代码优化")
@@ -92,10 +96,10 @@ class SearchPlanTests(unittest.TestCase):
         self.assertEqual(results[0].title, "测试标题")
         self.assertEqual(results[0].snippet, "一段 搜索摘要")
         self.assertEqual(results[0].bridge, "修复思维")
-        request = mocked.call_args.args[0]
-        self.assertIn("format=json", request.full_url)
-        self.assertIn("language=zh-CN", request.full_url)
-        self.assertIn("engines=baidu%2Cgoogle", request.full_url)
+        request_urls = [call.args[0].full_url for call in mocked.call_args_list]
+        self.assertTrue(any("format=json" in url for url in request_urls))
+        self.assertTrue(any("language=zh-CN" in url for url in request_urls))
+        self.assertTrue(any("engines=baidu%2Cgoogle" in url for url in request_urls))
 
     def test_searxng_retries_with_bing_when_primary_engines_are_empty(self):
         bing_payload = {
@@ -108,7 +112,7 @@ class SearchPlanTests(unittest.TestCase):
             results = searxng_search(plan, 3)
         self.assertEqual(results[0].title, "嘉豪（网络流行词）")
         self.assertEqual(mocked.call_count, 2)
-        self.assertIn("engines=bing", mocked.call_args.args[0].full_url)
+        self.assertTrue(any("engines=bing" in call.args[0].full_url for call in mocked.call_args_list))
 
     def test_unknown_query_does_not_use_unrelated_original_fallback(self):
         with patch("server.searxng_search", return_value=[]):
@@ -172,6 +176,24 @@ class SearchPlanTests(unittest.TestCase):
             payload = search("代码优化", 20, 3)
         self.assertEqual(payload["mode"], "searxng")
         self.assertTrue(payload["search_backend"]["available"])
+
+    def test_search_runs_multiple_plans_concurrently_and_caches_result(self):
+        def slow_result(plan, _limit):
+            time.sleep(0.08)
+            slug = __import__("urllib.parse").parse.quote(plan.query)
+            return [__import__("server").SearchResult(
+                plan.query, f"https://example.com/{slug}", plan.query, "example.com", "example.com", plan.bridge, plan.reason, plan.distance
+            )]
+
+        started = time.perf_counter()
+        with patch("server.searxng_search", side_effect=slow_result) as mocked:
+            first = search("代码优化", 60, 10)
+            elapsed = time.perf_counter() - started
+            second = search("代码优化", 60, 10)
+        self.assertLess(elapsed, 0.25)
+        self.assertEqual(mocked.call_count, 5)
+        self.assertFalse(first["cached"])
+        self.assertTrue(second["cached"])
 
 
 if __name__ == "__main__":

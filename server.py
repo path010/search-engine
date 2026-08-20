@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from dataclasses import asdict, dataclass
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -26,6 +27,10 @@ SEARXNG_URL = os.getenv("SEARXNG_URL", DEFAULT_SEARXNG_URL).strip().rstrip("/")
 SEARXNG_LANGUAGE = os.getenv("SEARXNG_LANGUAGE", "zh-CN").strip() or "zh-CN"
 SEARXNG_ENGINES = os.getenv("SEARXNG_ENGINES", "baidu,google").strip() or "baidu,google"
 SEARXNG_FALLBACK_ENGINES = os.getenv("SEARXNG_FALLBACK_ENGINES", "bing").strip() or "bing"
+SEARXNG_TIMEOUT = float(os.getenv("SEARXNG_TIMEOUT", "3.0"))
+SEARCH_TOTAL_TIMEOUT = float(os.getenv("SEARCH_TOTAL_TIMEOUT", "3.5"))
+SEARCH_CACHE_TTL = int(os.getenv("SEARCH_CACHE_TTL", "120"))
+SEARCH_CACHE: dict[tuple[str, int, int], tuple[float, dict[str, Any]]] = {}
 
 
 @dataclass(frozen=True)
@@ -290,7 +295,8 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
     engine_groups = list(dict.fromkeys([SEARXNG_ENGINES, SEARXNG_FALLBACK_ENGINES]))
     items: list[Any] = []
     last_error: Exception | None = None
-    for engines in engine_groups:
+
+    def fetch_items(engines: str) -> list[Any]:
         params = urllib.parse.urlencode(
             {
                 "q": plan.query,
@@ -305,17 +311,33 @@ def searxng_search(plan: SearchPlan, limit: int = 3) -> list[SearchResult]:
             f"{SEARXNG_URL}/search?{params}",
             headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         )
-        try:
-            with urllib.request.urlopen(request, timeout=6.0) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-            response_items = payload.get("results")
-            if not isinstance(response_items, list):
-                raise ValueError("SearXNG response does not contain a results list")
-            if response_items:
-                items = response_items
-                break
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as error:
-            last_error = error
+        with urllib.request.urlopen(request, timeout=SEARXNG_TIMEOUT) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        response_items = payload.get("results")
+        if not isinstance(response_items, list):
+            raise ValueError("SearXNG response does not contain a results list")
+        return response_items
+
+    # Primary and backup engines race each other. This avoids waiting for a
+    # CAPTCHA-blocked source before trying the healthy one.
+    executor = ThreadPoolExecutor(max_workers=len(engine_groups), thread_name_prefix="searxng-engine")
+    futures = [executor.submit(fetch_items, engines) for engines in engine_groups]
+    try:
+        for future in as_completed(futures, timeout=SEARXNG_TIMEOUT + 0.25):
+            try:
+                response_items = future.result()
+                if response_items:
+                    items = response_items
+                    break
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError) as error:
+                last_error = error
+    except TimeoutError as error:
+        last_error = error
+    finally:
+        for future in futures:
+            if not future.done():
+                future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
 
     if not items and last_error is not None:
         raise last_error
@@ -422,17 +444,37 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
     query = clean_text(query)[:160]
     divergence = max(0, min(100, int(divergence)))
     limit = max(3, min(16, int(limit)))
+    cache_key = (query, divergence, limit)
+    cached = SEARCH_CACHE.get(cache_key)
+    if cached and time.monotonic() - cached[0] < SEARCH_CACHE_TTL:
+        return {**cached[1], "cached": True}
+
     plans = build_search_plans(query, divergence)
     raw: list[SearchResult] = []
     searxng_available = True
     per_plan = limit if len(plans) == 1 else (2 if divergence > 30 else 3)
 
-    for plan in plans:
-        try:
-            raw.extend(searxng_search(plan, per_plan))
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError):
+    # Each bridge is independent. Running them concurrently keeps a high
+    # divergence search close to the latency of one SearXNG request instead
+    # of adding the latency of four or five requests together.
+    plan_results: list[list[SearchResult]] = [[] for _ in plans]
+    executor = ThreadPoolExecutor(max_workers=min(5, len(plans)), thread_name_prefix="search-plan")
+    futures = {executor.submit(searxng_search, plan, per_plan): index for index, plan in enumerate(plans)}
+    try:
+        completed, pending = wait(futures, timeout=SEARCH_TOTAL_TIMEOUT)
+        for future in completed:
+            try:
+                plan_results[futures[future]] = future.result()
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError):
+                searxng_available = False
+        if pending:
             searxng_available = False
-            break
+            for future in pending:
+                future.cancel()
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+    for results_for_plan in plan_results:
+        raw.extend(results_for_plan)
 
     results = deduplicate(raw, limit)
     live_count = len(results)
@@ -451,7 +493,7 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
         {"query": plan.query, "bridge": plan.bridge, "distance": plan.distance}
         for plan in plans[1:]
     ]
-    return {
+    payload = {
         "query": query,
         "divergence": divergence,
         "mode": mode,
@@ -464,6 +506,13 @@ def search(query: str, divergence: int, limit: int = 10) -> dict[str, Any]:
         "detours": detours,
         "results": [asdict(result) for result in results],
     }
+    SEARCH_CACHE[cache_key] = (time.monotonic(), payload)
+    if len(SEARCH_CACHE) > 128:
+        cutoff = time.monotonic() - SEARCH_CACHE_TTL
+        for key, (created_at, _value) in list(SEARCH_CACHE.items()):
+            if created_at < cutoff:
+                SEARCH_CACHE.pop(key, None)
+    return {**payload, "cached": False}
 
 
 class BeyondSearchHandler(SimpleHTTPRequestHandler):

@@ -32,6 +32,8 @@ $env:SEARXNG_FALLBACK_ENGINES="bing"
 
 当百度或 Google 因验证码、限流而返回空结果时，后端会自动改用 Bing。对于无法识别且所有实时源均无结果的词，页面不会再用无关精选网址凑数。
 
+多个偏离方向与备用搜索源都会并行检索；整次搜索默认最多等待 3.5 秒，相同查询默认缓存 120 秒。可通过 `SEARXNG_TIMEOUT`、`SEARCH_TOTAL_TIMEOUT` 和 `SEARCH_CACHE_TTL` 调整这些限制。
+
 ## 测试
 
 ```powershell
