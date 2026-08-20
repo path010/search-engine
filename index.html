@@ -7,52 +7,52 @@
   <style>
     :root {
       color-scheme: light;
-      --page: #eef2f7;
+      --page: #f7f7f7;
       --surface: #ffffff;
-      --surface-glass: rgba(255,255,255,.82);
-      --ink: #172033;
-      --muted: #68768b;
-      --line: #dce4ef;
-      --blue: #2169df;
-      --blue-soft: #eaf2ff;
-      --orange: #c36a24;
-      --green: #15774f;
-      --shadow: 0 20px 55px rgba(27, 47, 83, .16);
+      --surface-glass: rgba(255,255,255,.88);
+      --ink: #0a0a0a;
+      --muted: #666260;
+      --line: #dedbd8;
+      --blue: #c21f30;
+      --blue-soft: #f9ecee;
+      --orange: #c21f30;
+      --green: #3d3937;
+      --shadow: 0 20px 55px rgba(10, 10, 10, .10);
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; min-height: 100%; }
     body {
       background:
-        radial-gradient(circle at 12% 8%, rgba(79, 129, 235, .23), transparent 32%),
-        radial-gradient(circle at 86% 4%, rgba(240, 176, 111, .18), transparent 25%),
-        linear-gradient(135deg, #f4f6fb 0%, #e9eff7 100%);
+        radial-gradient(circle at 12% 8%, rgba(194, 31, 48, .07), transparent 30%),
+        radial-gradient(circle at 88% 2%, rgba(10, 10, 10, .045), transparent 28%),
+        linear-gradient(135deg, #ffffff 0%, #f7f7f7 100%);
       color: var(--ink);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
     }
     button, input { font: inherit; }
     button { cursor: pointer; }
-    .browser-shell { margin: 18px auto; max-width: 1440px; overflow: hidden; background: var(--surface-glass); border: 1px solid rgba(255,255,255,.62); border-radius: 24px; box-shadow: var(--shadow); }
-    .browser-bar { align-items: center; display: flex; gap: 10px; padding: 10px 16px; background: rgba(237, 240, 246, .92); border-bottom: 1px solid rgba(206, 216, 231, .85); }
-    .browser-icon { color: #6e7a8e; font-size: 20px; line-height: 1; }
-    .address-bar { align-items: center; background: rgba(255,255,255,.83); border: 1px solid #d9e0eb; border-radius: 18px; color: #748198; display: flex; flex: 1; gap: 8px; min-width: 0; padding: 7px 13px; }
+    .browser-shell { margin: 18px auto; max-width: 1440px; overflow: hidden; background: var(--surface-glass); border: 1px solid #e6e3e0; border-radius: 24px; box-shadow: var(--shadow); }
+    .browser-bar { align-items: center; display: flex; gap: 10px; padding: 10px 16px; background: rgba(247,247,247,.94); border-bottom: 1px solid var(--line); }
+    .browser-icon { color: #696462; font-size: 20px; line-height: 1; }
+    .address-bar { align-items: center; background: rgba(255,255,255,.9); border: 1px solid #dedbd8; border-radius: 18px; color: #77716e; display: flex; flex: 1; gap: 8px; min-width: 0; padding: 7px 13px; }
     .address-bar span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .page { padding: 0 34px 34px; }
     .top-nav { align-items: center; display: flex; justify-content: space-between; padding: 18px 0 12px; }
     .brand { align-items: center; display: flex; gap: 10px; }
-    .brand-mark { align-items: center; background: var(--blue); border-radius: 11px; color: #fff; display: inline-flex; font-size: 18px; height: 34px; justify-content: center; width: 34px; }
+    .brand-mark { align-items: center; background: var(--blue); border-radius: 11px; color: #fff; display: inline-flex; font-size: 18px; height: 34px; justify-content: center; width: 34px; box-shadow: 0 5px 14px rgba(194,31,48,.18); }
     .brand strong { font-size: 16px; }
     .brand small { color: var(--muted); font-size: 11px; margin-left: 5px; }
     .nav-actions { align-items: center; display: flex; gap: 8px; }
-    .nav-actions button, .outline-button { background: rgba(255,255,255,.54); border: 1px solid var(--line); border-radius: 9px; color: var(--ink); padding: 8px 11px; }
+    .nav-actions button, .outline-button { background: rgba(255,255,255,.7); border: 1px solid var(--line); border-radius: 9px; color: var(--ink); padding: 8px 11px; }
     .nav-actions button:hover, .outline-button:hover { border-color: var(--blue); color: var(--blue); }
     .hero { margin: 44px auto 0; max-width: 1080px; }
     .hero-meta { color: var(--muted); font-size: 12px; letter-spacing: .02em; text-align: center; }
     h1 { font-size: clamp(32px, 5vw, 54px); font-weight: 500; letter-spacing: -.055em; line-height: 1; margin: 10px 0 23px; text-align: center; }
-    .search-wrap { background: var(--surface); border: 1px solid #d6dfec; border-radius: 29px; box-shadow: 0 12px 28px rgba(29, 54, 99, .13); display: flex; gap: 9px; padding: 6px 7px 6px 18px; }
+    .search-wrap { background: var(--surface); border: 1px solid #d8d4d1; border-radius: 29px; box-shadow: 0 12px 28px rgba(10,10,10,.10); display: flex; gap: 9px; padding: 6px 7px 6px 18px; }
     .search-wrap input { background: transparent; border: 0; color: var(--ink); flex: 1; min-width: 0; outline: none; padding: 12px 0; }
     .search-wrap button { background: var(--blue); border: 1px solid var(--blue); border-radius: 22px; color: #fff; font-weight: 700; padding: 10px 20px; }
-    .search-wrap button:hover { filter: brightness(1.07); }
-    .divergence-panel { background: #ffffff; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); margin-top: 12px; padding: 14px 16px 11px; box-shadow: 0 6px 18px rgba(29, 54, 99, .06); }
+    .search-wrap button:hover { background: #a91928; border-color: #a91928; }
+    .divergence-panel { background: #ffffff; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); margin-top: 12px; padding: 14px 16px 11px; box-shadow: 0 6px 18px rgba(10,10,10,.045); }
     .divergence-head { align-items: baseline; display: flex; justify-content: space-between; }
     .divergence-head strong { font-size: 13px; }
     .divergence-head span { color: var(--blue); font-size: 14px; font-weight: 700; }
@@ -65,8 +65,8 @@
     .section-head h2 { font-size: 16px; font-weight: 500; margin: 0; }
     .section-head span { color: var(--muted); font-size: 11px; }
     .shortcut-grid { display: grid; gap: 9px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
-    .shortcut { align-items: center; background: rgba(255,255,255,.68); border: 1px solid rgba(213, 222, 235, .92); border-radius: 13px; display: flex; gap: 8px; min-width: 0; padding: 10px; transition: transform .16s ease, box-shadow .16s ease; }
-    .shortcut:hover { box-shadow: 0 8px 18px rgba(28, 55, 101, .11); transform: translateY(-2px); }
+    .shortcut { align-items: center; background: rgba(255,255,255,.78); border: 1px solid var(--line); border-radius: 13px; display: flex; gap: 8px; min-width: 0; padding: 10px; transition: transform .16s ease, box-shadow .16s ease; }
+    .shortcut:hover { box-shadow: 0 8px 18px rgba(10,10,10,.09); transform: translateY(-2px); }
     .shortcut-icon { align-items: center; background: var(--blue-soft); border-radius: 9px; color: var(--blue); display: flex; flex: 0 0 30px; height: 30px; justify-content: center; }
     .shortcut div { min-width: 0; }
     .shortcut strong, .shortcut span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -77,13 +77,13 @@
     .feed-tabs button.active { border-bottom-color: var(--blue); color: var(--ink); }
     .feed-grid { display: grid; gap: 11px; grid-template-columns: 1.45fr .8fr .8fr; }
     .feed-feature, .feed-card { border: 1px solid var(--line); border-radius: 15px; min-height: 176px; overflow: hidden; position: relative; }
-    .feed-feature { background: linear-gradient(135deg, #152d5c 0%, #315fa2 50%, #b56f43 125%); color: #f9fbff; padding: 18px; }
+    .feed-feature { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 64%, #70202a 130%); color: #ffffff; padding: 18px; }
     .feed-feature::after { color: rgba(255,255,255,.18); content: "✦"; font-size: 112px; line-height: 1; position: absolute; right: 16px; top: 8px; }
     .feed-feature small, .feed-card small { font-size: 10px; }
-    .feed-feature small { color: #cfdef9; }
+    .feed-feature small { color: #ead9db; }
     .feed-feature strong { display: block; font-size: 20px; line-height: 1.2; margin-top: 27px; max-width: 330px; position: relative; z-index: 1; }
-    .feed-feature span { bottom: 15px; color: #d8e5f8; font-size: 11px; left: 18px; position: absolute; }
-    .feed-card { background: rgba(255,255,255,.8); padding: 15px; }
+    .feed-feature span { bottom: 15px; color: #ddd8d5; font-size: 11px; left: 18px; position: absolute; }
+    .feed-card { background: rgba(255,255,255,.86); padding: 15px; }
     .feed-card small { color: var(--orange); }
     .feed-card strong { display: block; font-size: 15px; line-height: 1.25; margin-top: 11px; }
     .feed-card p { color: var(--muted); font-size: 11px; margin: 9px 0 0; }
